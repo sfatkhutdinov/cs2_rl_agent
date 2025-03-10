@@ -15,7 +15,7 @@ This project builds a complete reinforcement learning (RL) agent capable of lear
 The project is structured into several key components:
 
 1. **Game Interface** - Connects to Cities: Skylines 2 via:
-   - Mod API integration (primary method)
+   - Bridge Mod API integration (primary method)
    - Computer vision fallback (using screen capture and OCR)
 
 2. **Environment Wrapper** - Formats game state into a standardized RL environment following OpenAI Gym patterns
@@ -28,6 +28,7 @@ The project is structured into several key components:
 
 ```
 cs2_rl_agent/
+├── bridge_mod/         # C# bridge mod for direct game integration
 ├── data/               # Storage for collected game data and datasets
 ├── models/             # Saved model checkpoints
 ├── logs/               # Training logs and metrics
@@ -48,7 +49,10 @@ cs2_rl_agent/
 ```
 pip install -r requirements.txt
 ```
-3. Set up Cities: Skylines 2 with necessary mods (if applicable)
+3. Install the bridge mod:
+   - Copy the contents of the `bridge_mod` folder to your Cities: Skylines mods directory
+   - Enable the "RL Agent Bridge" mod in the game's Content Manager
+   - See `bridge_mod/README.md` for detailed installation instructions
 
 ## Usage
 
@@ -67,6 +71,14 @@ python -m src.evaluate --model models/trained_agent.pt
 ### Viewing Results
 
 Training metrics and visualizations can be found in the `logs/` directory.
+
+## Game Integration
+
+The agent can interact with Cities: Skylines 2 in two ways:
+
+1. **Bridge Mod (Recommended)**: A C# mod that exposes a REST API for direct game interaction. This provides accurate game state information and precise control.
+
+2. **Computer Vision (Fallback)**: Uses screen capture and OCR to interact with the game when the bridge mod is not available. This is less reliable but works without modifying the game.
 
 ## Requirements
 

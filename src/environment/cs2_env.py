@@ -7,6 +7,7 @@ import logging
 
 from ..interface.base_interface import BaseInterface
 from ..interface.vision_interface import VisionInterface
+from ..interface.api_interface import APIInterface
 
 
 class CS2Environment(gym.Env):
@@ -32,9 +33,14 @@ class CS2Environment(gym.Env):
         # Create the game interface based on configuration
         interface_type = config["interface"]["type"]
         if interface_type == "api":
-            # TODO: Implement API interface when available
-            self.logger.warning("API interface not implemented. Falling back to vision interface.")
-            self.interface = VisionInterface(config)
+            try:
+                self.interface = APIInterface(config)
+                if not self.interface.connect():
+                    self.logger.warning("Failed to connect to the game via API. Falling back to vision interface.")
+                    self.interface = VisionInterface(config)
+            except Exception as e:
+                self.logger.warning(f"Error initializing API interface: {str(e)}. Falling back to vision interface.")
+                self.interface = VisionInterface(config)
         else:
             self.interface = VisionInterface(config)
         
@@ -305,15 +311,15 @@ class CS2Environment(gym.Env):
             reward += metrics["happiness"] * reward_config["happiness"]
         
         # Calculate budget balance reward
-        if "budget" in metrics:
-            reward += metrics["budget"] * reward_config["budget_balance"]
+        if "budget_balance" in metrics:
+            reward += metrics["budget_balance"] * reward_config["budget_balance"]
         
         # Calculate traffic flow reward
-        if "traffic" in metrics:
-            reward += metrics["traffic"] * reward_config["traffic_flow"]
+        if "traffic_flow" in metrics:
+            reward += metrics["traffic_flow"] * reward_config["traffic_flow"]
         
         # Apply bankruptcy penalty
-        if "budget" in metrics and metrics["budget"] < 0:
+        if "budget_balance" in metrics and metrics["budget_balance"] < 0:
             reward += reward_config["bankruptcy_penalty"]
         
         # Apply pollution penalty
