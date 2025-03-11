@@ -104,7 +104,7 @@ exploration:
 
 # Agent settings (PPO algorithm)
 agent:
-  policy_type: "MlpLstmPolicy"    # Use LSTM for sequential decision making
+  policy_type: "MultiInputPolicy"  # Changed from MlpLstmPolicy to MultiInputPolicy
   learning_rate: 0.0003
   n_steps: 2048                   # Steps per update
   batch_size: 64

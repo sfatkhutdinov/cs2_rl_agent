@@ -232,12 +232,15 @@ def train(config_path):
     
     # Convert string network architectures to actual objects if present
     if "net_arch" in policy_kwargs and isinstance(policy_kwargs["net_arch"], list):
-        # Handle LSTM case
+        # Handle LSTM case - stable-baselines3 doesn't directly support LSTM in net_arch
+        # So we'll use a simpler architecture that works with MultiInputPolicy
         if any(isinstance(item, dict) and "lstm" in item for item in policy_kwargs["net_arch"]):
-            logger.info("Using LSTM network architecture")
-            # Ensure we're using the correct feature extractor for LSTM
-            if "features_extractor_class" not in policy_kwargs:
-                pass  # Let SB3 handle this
+            logger.info("LSTM requested but not directly supported - using standard architecture")
+            # Use a simpler architecture compatible with MultiInputPolicy
+            policy_kwargs["net_arch"] = [128, 128, dict(pi=[64], vf=[64])]
+            
+            # Note: For true LSTM support, we would need to use sb3-contrib's RecurrentPPO
+            # or implement a custom policy class
     
     # Initialize the agent
     logger.info("Initializing PPO agent")
