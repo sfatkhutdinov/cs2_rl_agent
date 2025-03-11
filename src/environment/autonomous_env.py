@@ -1,9 +1,9 @@
 import logging
 import time
 import os
-import gym
+import gymnasium as gym
 import numpy as np
-from gym import spaces
+from gymnasium import spaces
 from src.interface.auto_vision_interface import AutoVisionInterface
 from src.interface.menu_explorer import MenuExplorer
 from src.environment.cs2_env import CS2Environment
@@ -27,6 +27,10 @@ class AutonomousCS2Environment(gym.Wrapper):
             menu_exploration_buffer_size: Size of the buffer for storing discovered menu items
             logger: Optional logger instance
         """
+        # Ensure base environment is properly initialized
+        if not isinstance(base_env, gym.Env):
+            raise ValueError("base_env must be a gymnasium.Env instance")
+            
         super().__init__(base_env)
         
         self.logger = logger or logging.getLogger("AutonomousEnv")
@@ -59,35 +63,32 @@ class AutonomousCS2Environment(gym.Wrapper):
         self.logger.info("Autonomous environment initialized with extended action space")
     
     def _extend_action_space(self):
-        """
-        Extend the action space to include exploration-specific actions.
-        """
-        # Keep original action space from base environment
-        original_actions = self.action_space.n if isinstance(self.action_space, spaces.Discrete) else 0
+        """Extend the base environment's action space with exploration-specific actions."""
+        # Get the original action space size
+        base_action_space_n = self.env.action_space.n
         
-        # Define new action space with additional exploration actions
+        # Add exploration-specific actions
+        exploration_actions = [
+            "explore_menu",
+            "explore_ui",
+            "random_action",
+            "repeat_last_action",
+            "undo_last_action"
+        ]
+        
+        # Create the extended action space
+        self.action_space = spaces.Discrete(base_action_space_n + len(exploration_actions))
+        
+        # Store mapping of new actions
         self.exploration_actions = {
-            "explore_menu": original_actions,  # Trigger menu exploration
-            "click_discovered": original_actions + 1,  # Click on a recently discovered element
-            "random_click": original_actions + 2,  # Make a random click on screen
-            "wait_and_observe": original_actions + 3,  # Wait and observe changes
-            "esc_menu": original_actions + 4,  # Press ESC to close menus
-            "scroll_down": original_actions + 5,  # Scroll down
-            "scroll_up": original_actions + 6,  # Scroll up
+            base_action_space_n + i: action 
+            for i, action in enumerate(exploration_actions)
         }
         
-        # Create new action space
-        total_actions = original_actions + 7  # Original + 7 exploration actions
-        self.action_space = spaces.Discrete(total_actions)
+        # Store the size of the base action space
+        self.base_action_space_n = base_action_space_n
         
-        # Create a mapping from action indices to human-readable names
-        self.action_names = {}
-        # Add original action names if available
-        if hasattr(self.env, 'action_names'):
-            self.action_names.update(self.env.action_names)
-        # Add new exploration action names
-        for name, idx in self.exploration_actions.items():
-            self.action_names[idx] = name
+        self.logger.info(f"Extended action space from {base_action_space_n} to {self.action_space.n} actions")
     
     def reset(self):
         """Reset the environment and initialize exploration state."""
