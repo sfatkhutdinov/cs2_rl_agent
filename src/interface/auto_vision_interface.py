@@ -490,7 +490,7 @@ class AutoVisionInterface(BaseInterface):
             # Modified to be more robust in the absence of templates
             # This reduces the dependency on perfect template matching
             metrics = {}
-            if self.is_connected:
+            if self.connected:
                 screenshot = self.capture_screen()
                 
                 # Try to get values using templates, but don't fail if templates aren't found
@@ -521,7 +521,7 @@ class AutoVisionInterface(BaseInterface):
                 except Exception as e:
                     self.logger.debug(f"Failed to read traffic: {str(e)}")
                     metrics["traffic"] = 0
-                    
+            
             return metrics
         except Exception as e:
             self.logger.warning(f"Failed to get metrics: {str(e)}")
