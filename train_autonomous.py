@@ -244,24 +244,30 @@ def train(config_path):
     
     # Initialize the agent
     logger.info("Initializing PPO agent")
+    
+    # Get agent configuration
+    agent_config = config.get("agent", {})
+    use_sde = agent_config.get("use_sde", False)
+    
+    # Initialize PPO with appropriate parameters
     model = PPO(
-        policy=config.get("agent", {}).get("policy_type", "MlpPolicy"),
+        policy=agent_config.get("policy_type", "MultiInputPolicy"),
         env=env,
-        learning_rate=config.get("agent", {}).get("learning_rate", 3e-4),
-        n_steps=config.get("agent", {}).get("n_steps", 2048),
-        batch_size=config.get("agent", {}).get("batch_size", 64),
-        n_epochs=config.get("agent", {}).get("n_epochs", 10),
-        gamma=config.get("agent", {}).get("gamma", 0.99),
-        gae_lambda=config.get("agent", {}).get("gae_lambda", 0.95),
-        clip_range=config.get("agent", {}).get("clip_range", 0.2),
-        clip_range_vf=config.get("agent", {}).get("clip_range_vf", None),
-        normalize_advantage=config.get("agent", {}).get("normalize_advantage", True),
-        ent_coef=config.get("agent", {}).get("ent_coef", 0.01),
-        vf_coef=config.get("agent", {}).get("vf_coef", 0.5),
-        max_grad_norm=config.get("agent", {}).get("max_grad_norm", 0.5),
-        use_sde=config.get("agent", {}).get("use_sde", False),
-        sde_sample_freq=config.get("agent", {}).get("sde_sample_freq", -1),
-        target_kl=config.get("agent", {}).get("target_kl", None),
+        learning_rate=agent_config.get("learning_rate", 3e-4),
+        n_steps=agent_config.get("n_steps", 2048),
+        batch_size=agent_config.get("batch_size", 64),
+        n_epochs=agent_config.get("n_epochs", 10),
+        gamma=agent_config.get("gamma", 0.99),
+        gae_lambda=agent_config.get("gae_lambda", 0.95),
+        clip_range=agent_config.get("clip_range", 0.2),
+        clip_range_vf=agent_config.get("clip_range_vf", None),
+        normalize_advantage=agent_config.get("normalize_advantage", True),
+        ent_coef=agent_config.get("ent_coef", 0.01),
+        vf_coef=agent_config.get("vf_coef", 0.5),
+        max_grad_norm=agent_config.get("max_grad_norm", 0.5),
+        use_sde=use_sde,
+        sde_sample_freq=agent_config.get("sde_sample_freq", -1) if use_sde else None,
+        target_kl=agent_config.get("target_kl", None),
         tensorboard_log=tb_log_dir,
         policy_kwargs=policy_kwargs,
         verbose=1,

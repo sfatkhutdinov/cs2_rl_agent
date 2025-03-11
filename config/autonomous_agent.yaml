@@ -104,7 +104,7 @@ exploration:
 
 # Agent settings (PPO algorithm)
 agent:
-  policy_type: "MultiInputPolicy"  # Changed from MlpLstmPolicy to MultiInputPolicy
+  policy_type: "MultiInputPolicy"  # For handling both visual and metric observations
   learning_rate: 0.0003
   n_steps: 2048                   # Steps per update
   batch_size: 64
@@ -113,17 +113,15 @@ agent:
   gae_lambda: 0.95                # GAE lambda parameter
   clip_range: 0.2
   normalize_advantage: true
-  ent_coef: 0.02                  # Higher entropy coefficient for more exploration
+  ent_coef: 0.05                  # Increased entropy coefficient for better exploration
   vf_coef: 0.5
   max_grad_norm: 0.5
-  use_sde: true                   # Use state-dependent exploration
-  sde_sample_freq: 4
+  use_sde: false                  # Disabled SDE since we use discrete actions
   
-  # Policy network architecture (using LSTM for temporal memory)
+  # Policy network architecture
   policy_kwargs:
     net_arch:
       - {"pi": [128, 128], "vf": [128, 128]}  # Shared network
-      - {"lstm": 128}                          # LSTM layer
       - {"pi": [64], "vf": [64]}              # Policy and value heads
 
 # Training settings
