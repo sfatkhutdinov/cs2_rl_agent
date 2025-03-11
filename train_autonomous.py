@@ -71,12 +71,44 @@ def make_env(rank, config, seed=0):
         # Create base environment configuration
         env_config = {
             "interface": interface_config["interface"],  # Pass the same interface config
-            "observation_space": config.get("environment", {}).get("observation_space", "visual"),
-            "action_space": config.get("environment", {}).get("action_space", "basic"),
-            "reward_function": config.get("environment", {}).get("reward_function", "population"),
-            "max_episode_steps": config.get("environment", {}).get("max_episode_steps", 1000),
-            "metrics_update_freq": config.get("environment", {}).get("metrics_update_freq", 10),
-            "pause_on_menu": config.get("environment", {}).get("pause_on_menu", True)
+            "environment": {
+                "type": config.get("environment", {}).get("type", "cs2"),
+                "observation_space": {
+                    "type": config.get("environment", {}).get("observation_space", {}).get("type", "combined"),
+                    "visual": config.get("environment", {}).get("observation_space", {}).get("visual", {
+                        "enabled": True,
+                        "resolution": [84, 84],
+                        "grayscale": True
+                    }),
+                    "metrics": config.get("environment", {}).get("observation_space", {}).get("metrics", {
+                        "enabled": True,
+                        "normalize": True
+                    })
+                },
+                "action_space": {
+                    "type": config.get("environment", {}).get("action_space", {}).get("type", "advanced"),
+                    "continuous": config.get("environment", {}).get("action_space", {}).get("continuous", False)
+                },
+                "reward_function": {
+                    "type": config.get("environment", {}).get("reward_function", {}).get("type", "balanced"),
+                    "weights": config.get("environment", {}).get("reward_function", {}).get("weights", {
+                        "population": 0.3,
+                        "happiness": 0.2,
+                        "budget": 0.2,
+                        "traffic": 0.2,
+                        "discovery": 0.1
+                    })
+                },
+                "max_episode_steps": config.get("environment", {}).get("max_episode_steps", 2000),
+                "metrics_update_freq": config.get("environment", {}).get("metrics_update_freq", 10),
+                "pause_on_menu": config.get("environment", {}).get("pause_on_menu", False),
+                "metrics": config.get("environment", {}).get("metrics", [
+                    "population",
+                    "happiness",
+                    "budget_balance",
+                    "traffic"
+                ])
+            }
         }
         
         # Create base environment

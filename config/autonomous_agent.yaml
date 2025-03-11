@@ -16,14 +16,35 @@ interface:
 
 # Environment settings
 environment:
-  observation_space: "combined"  # Use both visual and metric observations
-  action_space: "advanced"       # Use the advanced action space with more possible actions
-  reward_function: "balanced"    # Use a balanced reward function considering multiple metrics
-  max_episode_steps: 2000        # Allow longer episodes for proper exploration
-  metrics_update_freq: 10        # Update metrics frequently
-  pause_on_menu: false           # Don't pause game during menu navigation to allow learning
+  type: "cs2"  # Environment type identifier
+  observation_space:
+    type: "combined"  # Use both visual and metric observations
+    visual:
+      enabled: true
+      resolution: [84, 84]  # Observation resolution
+      grayscale: true  # Convert to grayscale to reduce dimensionality
+    metrics:
+      enabled: true
+      normalize: true  # Normalize metric values
   
-  # Additional metrics to observe
+  action_space:
+    type: "advanced"  # Use the advanced action space
+    continuous: false  # Use discrete actions
+    
+  reward_function:
+    type: "balanced"  # Use a balanced reward function
+    weights:
+      population: 0.3
+      happiness: 0.2
+      budget: 0.2
+      traffic: 0.2
+      discovery: 0.1  # Reward for discovering new UI elements
+  
+  max_episode_steps: 2000  # Allow longer episodes for proper exploration
+  metrics_update_freq: 10   # Update metrics frequently
+  pause_on_menu: false     # Don't pause game during menu navigation
+  
+  # Metrics to track
   metrics:
     - "population"
     - "happiness"
