@@ -7,7 +7,7 @@ environment:
   # Interface config
   interface:
     type: "auto_vision"
-    screen_region: null  # Use full screen by default
+    screen_region: [0, 0, 1920, 1080]  # Default full HD resolution
     templates_dir: "templates"
     ocr_enabled: true
     

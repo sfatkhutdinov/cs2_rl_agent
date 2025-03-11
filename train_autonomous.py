@@ -49,6 +49,10 @@ def make_env(rank, config, seed=0):
         
         # Create the base environment
         interface_type = config.get("environment", {}).get("interface", {}).get("type", "auto_vision")
+        
+        # Get screen region configuration with fallback to default
+        screen_region = config.get("environment", {}).get("interface", {}).get("screen_region", [0, 0, 1920, 1080])
+        
         if interface_type == "auto_vision":
             # Use the automatic vision interface
             interface_config = {
@@ -58,7 +62,7 @@ def make_env(rank, config, seed=0):
                         "detection_method": "ocr",  # Default to OCR
                         "ocr_confidence": 0.6,
                         "template_threshold": 0.7,
-                        "screen_region": config.get("environment", {}).get("interface", {}).get("screen_region", None)
+                        "screen_region": screen_region
                     },
                     "templates_dir": config.get("environment", {}).get("interface", {}).get("templates_dir", "templates"),
                     "ocr_enabled": config.get("environment", {}).get("interface", {}).get("ocr_enabled", True)
@@ -66,7 +70,14 @@ def make_env(rank, config, seed=0):
             }
         else:
             # Default to auto vision if type not recognized
-            interface_config = {"interface": {"type": "auto_vision"}}
+            interface_config = {
+                "interface": {
+                    "type": "auto_vision",
+                    "vision": {
+                        "screen_region": screen_region
+                    }
+                }
+            }
         
         # Create environment config with all default values
         env_config = {
@@ -105,24 +116,30 @@ def make_env(rank, config, seed=0):
         }
         
         # Create base environment
-        base_env = CS2Environment(config=env_config)
-        base_env.logger = logger  # Set logger after initialization
-        
-        # Wrap with autonomous environment
-        autonomous_config = config.get("autonomous", {})
-        env = AutonomousCS2Environment(
-            base_env=base_env,
-            exploration_frequency=autonomous_config.get("exploration_frequency", 0.3),
-            random_action_frequency=autonomous_config.get("random_action_frequency", 0.2),
-            menu_exploration_buffer_size=autonomous_config.get("menu_exploration_buffer_size", 50),
-            logger=logger
-        )
-        
-        # Wrap with Monitor for logging
-        env_name = f"cs2_autonomous_{rank}"
-        env = Monitor(env, os.path.join("experiments", config.get("experiment_name", "autonomous"), "logs", env_name))
-        
-        return env
+        try:
+            base_env = CS2Environment(config=env_config)
+            base_env.logger = logger  # Set logger after initialization
+            
+            # Wrap with autonomous environment
+            autonomous_config = config.get("autonomous", {})
+            env = AutonomousCS2Environment(
+                base_env=base_env,
+                exploration_frequency=autonomous_config.get("exploration_frequency", 0.3),
+                random_action_frequency=autonomous_config.get("random_action_frequency", 0.2),
+                menu_exploration_buffer_size=autonomous_config.get("menu_exploration_buffer_size", 50),
+                logger=logger
+            )
+            
+            # Wrap with Monitor for logging
+            env_name = f"cs2_autonomous_{rank}"
+            env = Monitor(env, os.path.join("experiments", config.get("experiment_name", "autonomous"), "logs", env_name))
+            
+            return env
+        except Exception as e:
+            logger.error(f"Failed to create environment: {e}")
+            # Log more detailed information about the configuration
+            logger.error(f"Interface config: {interface_config}")
+            raise
         
     return _init
 

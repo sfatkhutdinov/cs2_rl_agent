@@ -51,13 +51,25 @@ class AutoVisionInterface(BaseInterface):
         self.sct = mss.mss()
         
         # Auto-detect screen resolution if not specified
-        if "screen_region" in config["interface"]["vision"]:
-            self.screen_region = tuple(config["interface"]["vision"]["screen_region"])
-        else:
-            # Get primary monitor dimensions
+        try:
+            if "screen_region" in config["interface"]["vision"] and config["interface"]["vision"]["screen_region"]:
+                # Ensure screen_region is a tuple or list with 4 elements
+                screen_region = config["interface"]["vision"]["screen_region"]
+                if isinstance(screen_region, (list, tuple)) and len(screen_region) == 4:
+                    self.screen_region = tuple(screen_region)
+                    self.logger.info(f"Using configured screen region: {self.screen_region}")
+                else:
+                    raise ValueError(f"Invalid screen_region format: {screen_region}")
+            else:
+                # Get primary monitor dimensions
+                monitor_info = mss.mss().monitors[1]  # Primary monitor
+                self.screen_region = (0, 0, monitor_info["width"], monitor_info["height"])
+                self.logger.info(f"Auto-detected screen resolution: {self.screen_region[2]}x{self.screen_region[3]}")
+        except (KeyError, TypeError) as e:
+            # Fallback to auto-detection
             monitor_info = mss.mss().monitors[1]  # Primary monitor
             self.screen_region = (0, 0, monitor_info["width"], monitor_info["height"])
-            self.logger.info(f"Auto-detected screen resolution: {self.screen_region[2]}x{self.screen_region[3]}")
+            self.logger.warning(f"Error configuring screen region ({str(e)}), auto-detected: {self.screen_region[2]}x{self.screen_region[3]}")
         
         self.monitor = {
             "top": self.screen_region[0], 
