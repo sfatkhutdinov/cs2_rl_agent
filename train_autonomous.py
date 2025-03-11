@@ -79,10 +79,25 @@ def make_env(rank, config, seed=0):
                 }
             }
         
+        # Get observation space configuration
+        obs_space_config = config.get("environment", {}).get("observation_space", {})
+        if not obs_space_config:
+            # Default observation space configuration
+            obs_space_config = {
+                "type": "combined",
+                "include_visual": True,
+                "include_metrics": True,
+                "image_size": [84, 84],
+                "grayscale": True,
+                "normalize_metrics": True,
+                "metrics": ["population", "happiness", "budget_balance", "traffic"]
+            }
+        
         # Create environment config with all default values
         env_config = {
             **interface_config,
             "environment": {
+                "observation_space": obs_space_config,
                 "action_space": {
                     "type": "advanced",
                     "zone": [
@@ -139,6 +154,7 @@ def make_env(rank, config, seed=0):
             logger.error(f"Failed to create environment: {e}")
             # Log more detailed information about the configuration
             logger.error(f"Interface config: {interface_config}")
+            logger.error(f"Full env config: {env_config}")
             raise
         
     return _init

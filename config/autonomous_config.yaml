@@ -10,6 +10,16 @@ environment:
     screen_region: [0, 0, 1920, 1080]  # Default full HD resolution
     templates_dir: "templates"
     ocr_enabled: true
+  
+  # Observation space configuration
+  observation_space:
+    type: "combined"
+    include_visual: true
+    include_metrics: true
+    image_size: [84, 84]
+    grayscale: true
+    normalize_metrics: true
+    metrics: ["population", "happiness", "budget_balance", "traffic"]
     
   # Reward function configuration
   reward_function:
