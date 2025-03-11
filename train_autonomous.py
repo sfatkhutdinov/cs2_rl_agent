@@ -93,6 +93,11 @@ def make_env(rank, config, seed=0):
                 "metrics": ["population", "happiness", "budget_balance", "traffic"]
             }
         
+        # Get environment parameters
+        max_episode_steps = config.get("environment", {}).get("max_episode_steps", 2000)
+        metrics_update_freq = config.get("environment", {}).get("metrics_update_freq", 10)
+        pause_on_menu = config.get("environment", {}).get("pause_on_menu", False)
+        
         # Create environment config with all default values
         env_config = {
             **interface_config,
@@ -126,7 +131,10 @@ def make_env(rank, config, seed=0):
                         "decrease_service_budget"
                     ]
                 },
-                "reward_function": config.get("environment", {}).get("reward_function", {})
+                "reward_function": config.get("environment", {}).get("reward_function", {}),
+                "max_episode_steps": max_episode_steps,
+                "metrics_update_freq": metrics_update_freq,
+                "pause_on_menu": pause_on_menu
             }
         }
         

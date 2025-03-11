@@ -29,6 +29,11 @@ environment:
     traffic_flow: 0.1
     bankruptcy_penalty: 1.0
     pollution_penalty: 0.05
+    
+  # Environment parameters
+  max_episode_steps: 2000
+  metrics_update_freq: 10
+  pause_on_menu: false
 
 # Agent configuration
 agent:
