@@ -10,7 +10,7 @@ from datetime import datetime
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
+from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv, VecTransposeImage
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.evaluation import evaluate_policy
 
@@ -199,6 +199,10 @@ def train(config_path):
     # Create vectorized environment
     env = DummyVecEnv([make_env(i, config, seed + i) for i in range(n_envs)])
     
+    # Wrap environment with image transpose for CNNs if using images
+    if config.get("agent", {}).get("policy_type", "").lower() == "cnnpolicy":
+        env = VecTransposeImage(env)
+    
     # Set up checkpoint callback
     checkpoint_freq = config.get("training", {}).get("checkpoint_freq", 10000)
     checkpoint_callback = CheckpointCallback(
@@ -214,6 +218,10 @@ def train(config_path):
         # Create a separate environment for evaluation
         eval_env = DummyVecEnv([make_env(0, config, seed + 1000)])  # Different seed
         
+        # Ensure the eval environment has the same wrappers as the training environment
+        if config.get("agent", {}).get("policy_type", "").lower() == "cnnpolicy":
+            eval_env = VecTransposeImage(eval_env)
+        
         eval_callback = EvalCallback(
             eval_env,
             best_model_save_path=os.path.join(model_dir, "best_model"),
@@ -228,23 +236,31 @@ def train(config_path):
     
     # Add memory monitoring callback if enabled
     if memory_monitor_enabled:
-        class MemoryMonitorCallback:
-            def __init__(self, memory_limit_gb, disk_limit_gb, check_interval, model_dir):
+        from stable_baselines3.common.callbacks import BaseCallback
+        
+        class MemoryMonitorCallback(BaseCallback):
+            """
+            Callback for monitoring memory and disk usage during training.
+            Inherits from BaseCallback for proper integration with Stable Baselines3.
+            """
+            def __init__(self, memory_limit_gb, disk_limit_gb, check_interval, model_dir, verbose=0):
+                super().__init__(verbose)
                 self.memory_limit_bytes = memory_limit_gb * 1024 * 1024 * 1024
                 self.disk_limit_bytes = disk_limit_gb * 1024 * 1024 * 1024
                 self.check_interval = check_interval
                 self.last_check = 0
                 self.model_dir = model_dir
-                
-            def __call__(self, locals, globals):
-                # Get current timestep
-                timestep = locals.get('timestep', 0)
-                
-                # Only check periodically
-                if timestep - self.last_check < self.check_interval:
+            
+            def _init_callback(self):
+                # Called when the callback is initialized
+                logger.info("Memory monitoring callback initialized")
+            
+            def _on_step(self):
+                # Only check periodically to avoid performance impact
+                if self.num_timesteps - self.last_check < self.check_interval:
                     return True
                 
-                self.last_check = timestep
+                self.last_check = self.num_timesteps
                 
                 # Check RAM usage
                 try:
@@ -264,8 +280,8 @@ def train(config_path):
                     if memory_usage > self.memory_limit_bytes:
                         logger.warning(f"Memory limit exceeded ({memory_percent:.1f}%)! Saving model and stopping...")
                         # Save the model before stopping
-                        model_path = os.path.join(self.model_dir, f"memory_limit_model_{timestep}")
-                        locals['self'].save(model_path)
+                        model_path = os.path.join(self.model_dir, f"memory_limit_model_{self.num_timesteps}")
+                        self.model.save(model_path)
                         return False  # Stop training
                         
                     # Handle excessive disk usage

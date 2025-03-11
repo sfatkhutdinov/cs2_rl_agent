@@ -1,61 +1,67 @@
-experiment_name: fully_autonomous_cs2_agent
+# Autonomous Agent Configuration for Cities: Skylines 2 RL
+experiment_name: "fully_autonomous_cs2_agent"
 seed: 42
-paths:
-  log_dir: logs/autonomous
-  model_dir: models/autonomous
-  tensorboard_dir: tensorboard/autonomous
-interface:
-  type: auto_vision
-  detection_method: ocr
-  ocr_confidence: 0.6
-  template_threshold: 0.7
-  cache_detections: true
-  vision:
-    screen_region: [0, 0, 1920, 1080]
+
+# Environment configuration
 environment:
-  type: cs2
-  observation_space:
-    type: combined
-    include_visual: true
-    include_metrics: true
-    image_size: [84, 84]
-    grayscale: true
-    normalize_metrics: true
-    metrics: [population, happiness, budget_balance, traffic]
-  action_space:
-    type: advanced
-    zone: [residential, commercial, industrial, office, delete_zone]
-    infrastructure: [road, power_line, water_pipe, park, service_building, delete_infrastructure]
-    budget: [increase_residential_tax, decrease_residential_tax, increase_commercial_tax, decrease_commercial_tax, increase_industrial_tax, decrease_industrial_tax, increase_service_budget, decrease_service_budget]
+  # Interface config
+  interface:
+    type: "auto_vision"
+    screen_region: null  # Use full screen by default
+    templates_dir: "templates"
+    ocr_enabled: true
+    
+  # Reward function configuration
   reward_function:
-    type: balanced
-    weights:
-      population: 0.3
-      happiness: 0.2
-      budget: 0.2
-      traffic: 0.2
-      discovery: 0.1
-  max_episode_steps: 2000
-  metrics_update_freq: 10
-exploration:
-  frequency: 0.3
-  random_action_frequency: 0.2
-  menu_buffer_size: 50
-training:
-  total_timesteps: 10000000
-  checkpoint_freq: 100000
-  evaluate_during_training: true
-  eval_freq: 100000
-  n_envs: 1
+    population_growth: 0.1
+    happiness: 0.05
+    budget_balance: 0.1
+    traffic_flow: 0.1
+    bankruptcy_penalty: 1.0
+    pollution_penalty: 0.05
+
+# Agent configuration
 agent:
-  policy_type: MultiInputPolicy
-  learning_rate: 3e-4
-  n_steps: 2048
-  batch_size: 64
-  n_epochs: 10
+  policy_type: "MlpPolicy"  # Options: MlpPolicy, CnnPolicy
+  policy_kwargs:
+    net_arch:
+      pi: [64, 32]  # Policy network
+      vf: [64, 32]  # Value function network
+    activation_fn: "relu"
+    ortho_init: true
+    normalize_images: true
+    optimizer_kwargs:
+      eps: 1e-5  # to prevent division by zero
+  
+  learning_rate: 0.0003
+  n_steps: 1024
+  batch_size: 128
+  n_epochs: 8
   gamma: 0.99
   gae_lambda: 0.95
-  clip_range: 0.2
-  ent_coef: 0.01
-  vf_coef: 0.5
-  use_sde: false
+  ent_coef: 0.005
+  vf_coef: 0.75
+  max_grad_norm: 0.5
+  target_kl: 0.015
+  
+# Training configuration
+training:
+  n_envs: 1  # Must be 1 for single-game interaction
+  total_timesteps: 10000000
+  checkpoint_freq: 50000
+  evaluate_during_training: true
+  eval_freq: 100000
+  eval_episodes: 2
+  
+# Autonomous exploration config
+autonomous:
+  exploration_frequency: 0.4
+  random_action_frequency: 0.2
+  menu_exploration_buffer_size: 50
+  
+# Memory monitoring config
+memory_monitor:
+  enabled: true
+  memory_limit_gb: 12
+  disk_limit_gb: 50
+  check_interval: 10000

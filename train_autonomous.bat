@@ -18,27 +18,14 @@ echo.
 pause
 
 echo Setting up Python environment...
-REM Try multiple possible virtual environment paths
-if exist venv\Scripts\activate.bat (
-    call venv\Scripts\activate.bat
-) else if exist .venv\Scripts\activate.bat (
-    call .venv\Scripts\activate.bat
-) else if exist env\Scripts\activate.bat (
-    call env\Scripts\activate.bat
-) else (
-    echo Virtual environment not found. Using system Python.
-)
+call venv\Scripts\activate.bat
 
 echo Creating necessary directories...
-if not exist logs mkdir logs
-if not exist logs\autonomous mkdir logs\autonomous
-if not exist models mkdir models
-if not exist models\autonomous mkdir models\autonomous
-if not exist tensorboard mkdir tensorboard
-if not exist tensorboard\autonomous mkdir tensorboard\autonomous
+if not exist experiments mkdir experiments
+if not exist templates mkdir templates
 
 echo Launching autonomous agent training...
-python train_autonomous.py --config config/autonomous_agent.yaml
+python train_autonomous.py --config config/autonomous_config.yaml
 
 echo.
 echo Training complete or interrupted.
