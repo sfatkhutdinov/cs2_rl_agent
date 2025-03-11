@@ -16,6 +16,9 @@ def load_config(config_path: str) -> Dict[str, Any]:
     Raises:
         FileNotFoundError: If the configuration file doesn't exist
     """
+    # Normalize path for Windows compatibility
+    config_path = os.path.normpath(config_path)
+    
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
     
@@ -66,6 +69,7 @@ def get_full_path(relative_path: str, config: Dict[str, Any]) -> str:
     # Get the directory where the script is located
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     
+    # Normalize path for Windows compatibility
     return os.path.normpath(os.path.join(base_dir, relative_path))
 
 
@@ -77,6 +81,9 @@ def save_config(config: Dict[str, Any], save_path: str) -> None:
         config: Configuration dictionary
         save_path: Path where to save the configuration
     """
+    # Normalize path for Windows compatibility
+    save_path = os.path.normpath(save_path)
+    
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     
     with open(save_path, 'w') as file:
