@@ -7,6 +7,7 @@ import mss
 from typing import Dict, Any, Tuple, List, Optional
 import logging
 from .base_interface import BaseInterface
+import os
 
 
 class VisionInterface(BaseInterface):
@@ -27,6 +28,25 @@ class VisionInterface(BaseInterface):
         super().__init__(config)
         self.logger = logging.getLogger("VisionInterface")
         
+        # Windows-specific setup for Tesseract
+        if os.name == 'nt':  # Windows
+            try:
+                # Try to use Tesseract from PATH
+                pytesseract.pytesseract.tesseract_cmd = 'tesseract'
+            except Exception:
+                # If not in PATH, try common installation locations
+                possible_paths = [
+                    r'C:\Program Files\Tesseract-OCR\tesseract.exe',
+                    r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe'
+                ]
+                for path in possible_paths:
+                    if os.path.exists(path):
+                        pytesseract.pytesseract.tesseract_cmd = path
+                        self.logger.info(f"Found Tesseract at: {path}")
+                        break
+                else:
+                    self.logger.warning("Tesseract not found in common locations. OCR will not work.")
+        
         # Set up screen capture
         self.sct = mss.mss()
         self.screen_region = tuple(config["interface"]["vision"]["screen_region"])
@@ -38,14 +58,16 @@ class VisionInterface(BaseInterface):
         # OCR settings
         self.ocr_confidence = config["interface"]["vision"]["ocr_confidence"]
         
-        # UI element locations (these will need to be calibrated)
+        # UI element locations - Default values for 1920x1080 resolution
+        # These should be calibrated for your specific setup
         self.ui_elements = {
+            # Top info bar elements
             "population": {"region": (100, 50, 200, 80)},
             "happiness": {"region": (300, 50, 400, 80)},
             "budget": {"region": (500, 50, 600, 80)},
             "traffic": {"region": (700, 50, 800, 80)},
             
-            # Control panels
+            # Control panels - adjust these based on your UI layout
             "residential_zone": {"region": (100, 700, 150, 750)},
             "commercial_zone": {"region": (160, 700, 210, 750)},
             "industrial_zone": {"region": (220, 700, 270, 750)},
