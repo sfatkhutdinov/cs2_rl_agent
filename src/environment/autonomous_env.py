@@ -450,155 +450,73 @@ class AutonomousCS2Environment(gym.Wrapper):
         info = {"exploration_action": self.action_handlers[action].name}
         
         try:
-            # Handle each exploration action type
-            if action in self.action_handlers:
-                action_name = self.action_handlers[action].name
-                
-                if action_name == "explore_menu":
-                    # Use menu explorer to find and click on menu elements
-                    if screenshot is not None and hasattr(self.menu_explorer, 'explore_screen'):
-                        exploration_result = self.menu_explorer.explore_screen(screenshot)
-                        
-                        if "action" in exploration_result and exploration_result["action"] in ["click_menu", "click_submenu", "click_discovered"]:
-                            # Click on the discovered element if coordinates are provided
-                            if "position" in exploration_result and hasattr(self.env.interface, 'click_at_coordinates'):
-                                self.env.interface.click_at_coordinates(
-                                    exploration_result["position"][0], 
-                                    exploration_result["position"][1]
-                                )
-                                
-                                # Add to discovery buffer if it's a new element
-                                self._update_discovery_buffer(exploration_result)
-                                
-                                # Small positive reward for discovering new elements
-                                reward = 0.05
-                                
-                                info["exploration_element"] = exploration_result.get("menu_name", 
-                                                                                exploration_result.get("element_name", "unknown"))
-                                time.sleep(0.3)  # Reduced delay
-                        
-                        elif "action" in exploration_result and exploration_result["action"] == "random_click":
-                            # Random exploration click
-                            if "position" in exploration_result and hasattr(self.env.interface, 'click_at_coordinates'):
-                                self.env.interface.click_at_coordinates(
-                                    exploration_result["position"][0], 
-                                    exploration_result["position"][1]
-                                )
-                                time.sleep(0.1)  # Reduced delay
-                
-                elif action_name == "explore_ui":
-                    # Perform a random UI exploration action - more focused on center of screen
-                    screen_width, screen_height = self.env.interface.screen_region[2], self.env.interface.screen_region[3]
+            # Get action handler details
+            action_handler = self.action_handlers[action]
+            action_name = action_handler.name
+            action_type = action_handler.action_type
+            
+            # Execute the action using its action_fn
+            success = action_handler.action_fn()
+            
+            # Update info based on action type
+            if action_type == ActionType.CAMERA_CONTROL:
+                info["camera_action"] = action_name
+                reward = 0.01  # Small reward for camera control
+            elif action_type == ActionType.UI_INTERACTION:
+                info["ui_action"] = action_name
+                # Menu exploration already gives rewards in the function
+            elif action_type == ActionType.KEYBOARD:
+                info["keyboard_action"] = action_name
+            
+            # Special actions that need additional handling
+            if action_name == "explore_menu":
+                # Menu explorer might need additional processing beyond what's in action_fn
+                if screenshot is not None and hasattr(self.menu_explorer, 'explore_screen'):
+                    exploration_result = self.menu_explorer.explore_screen(screenshot)
                     
-                    # Focus more on the center area of the map (25-75% of screen)
-                    x = np.random.randint(int(screen_width * 0.25), int(screen_width * 0.75))
-                    y = np.random.randint(int(screen_height * 0.25), int(screen_height * 0.75))
-                    
-                    self.env.interface.click_at_coordinates(x, y)
-                    info["random_ui_click"] = (x, y)
-                    time.sleep(0.1)  # Reduced delay
+                    if "action" in exploration_result and exploration_result["action"] in ["click_menu", "click_submenu", "click_discovered"]:
+                        # Add to discovery buffer if it's a new element
+                        self._update_discovery_buffer(exploration_result)
+                        
+                        # Small positive reward for discovering new elements
+                        reward = 0.05
+                        
+                        info["exploration_element"] = exploration_result.get("menu_name", 
+                                                                        exploration_result.get("element_name", "unknown"))
+            
+            elif action_name == "explore_ui":
+                # UI exploration already handled in action_fn
+                pass
+            
+            elif action_name == "random_action":
+                # Already handled in action_fn
+                pass
+            
+            # Wait a short time to let the game react
+            time.sleep(0.05)
+            
+            # Get new observation after action
+            try:
+                new_observation = self.env.get_observation()
+                if self._has_observation_changed(new_observation):
+                    observation = new_observation
+                    # Small reward for causing an observation change
+                    reward += 0.01
+            except Exception as e:
+                self.logger.warning(f"Failed to get new observation: {str(e)}")
                 
-                elif action_name == "random_action":
-                    # Perform a random base action
-                    random_action = np.random.randint(0, self.env.action_space.n)
-                    try:
-                        result = self.env.step(random_action)
-                        observation, reward, terminated, truncated, step_info = result
-                        info.update(step_info)
-                        info["random_base_action"] = random_action
-                    except Exception as e:
-                        self.logger.warning(f"Failed to execute random action {random_action}: {str(e)}")
+            # Track action success/failure for future exploration guidance
+            self._update_action_success_rates(action, reward)
                 
-                elif action_name == "repeat_last_action":
-                    # Do nothing special, let it use the last observation and reward
-                    info["repeated_last_action"] = True
-                
-                elif action_name == "undo_last_action":
-                    # Press escape key to cancel current action/tool
-                    if hasattr(self.env.interface, 'press_key'):
-                        self.env.interface.press_key('escape')
-                    else:
-                        pyautogui.press('escape')
-                    time.sleep(0.1)  # Reduced delay
-                    info["pressed_escape"] = True
-                
-                # Camera control actions
-                elif action_name == "zoom_in":
-                    if hasattr(self.env.interface, 'zoom_in'):
-                        self.env.interface.zoom_in(amount=2)
-                        info["camera_action"] = "zoom_in"
-                        reward = 0.01  # Small reward for camera control
-                
-                elif action_name == "zoom_out":
-                    if hasattr(self.env.interface, 'zoom_out'):
-                        self.env.interface.zoom_out(amount=2)
-                        info["camera_action"] = "zoom_out"
-                        reward = 0.01
-                
-                elif action_name == "rotate_left":
-                    if hasattr(self.env.interface, 'rotate_camera'):
-                        self.env.interface.rotate_camera(direction='left')
-                        info["camera_action"] = "rotate_left"
-                        reward = 0.01
-                
-                elif action_name == "rotate_right":
-                    if hasattr(self.env.interface, 'rotate_camera'):
-                        self.env.interface.rotate_camera(direction='right')
-                        info["camera_action"] = "rotate_right"
-                        reward = 0.01
-                
-                elif action_name == "pan_left":
-                    if hasattr(self.env.interface, 'pan_view'):
-                        self.env.interface.pan_view(direction='left', distance=150)
-                        info["camera_action"] = "pan_left"
-                        reward = 0.01
-                
-                elif action_name == "pan_right":
-                    if hasattr(self.env.interface, 'pan_view'):
-                        self.env.interface.pan_view(direction='right', distance=150)
-                        info["camera_action"] = "pan_right"
-                        reward = 0.01
-                
-                elif action_name == "pan_up":
-                    if hasattr(self.env.interface, 'pan_view'):
-                        self.env.interface.pan_view(direction='up', distance=150)
-                        info["camera_action"] = "pan_up"
-                        reward = 0.01
-                
-                elif action_name == "pan_down":
-                    if hasattr(self.env.interface, 'pan_view'):
-                        self.env.interface.pan_view(direction='down', distance=150)
-                        info["camera_action"] = "pan_down"
-                        reward = 0.01
-                
-                elif action_name == "center_view":
-                    # Use HOME key to reset/center view if game supports it
-                    if hasattr(self.env.interface, 'press_key'):
-                        self.env.interface.press_key('home')
-                        info["camera_action"] = "center_view"
-                        reward = 0.02  # Slightly higher reward for centering
-                
-                else:
-                    self.logger.warning(f"Unknown exploration action: {action_name}")
-            else:
-                self.logger.warning(f"Unknown exploration action index: {action}")
-        
         except Exception as e:
-            self.logger.warning(f"Error in exploration action {action}: {str(e)}")
-            info["error"] = str(e)
-            reward = -0.1  # Small penalty for errors
+            self.logger.error(f"Error handling exploration action {action}: {str(e)}")
+            # Set small negative reward for action failure
+            reward = -0.01
         
-        # Capture updated observation
-        try:
-            observation = self.env.get_observation()
-        except Exception as e:
-            self.logger.warning(f"Failed to get observation after exploration: {str(e)}")
-        
-        # Check if any changes occurred from our exploration
-        if self._has_observation_changed(observation):
-            reward += 0.02  # Small bonus if observation changed
-            info["observation_changed"] = True
-        
+        # Use the last observation if we couldn't get a new one
+        if observation is None:
+            observation = self.last_observation
+            
         return observation, reward, terminated, truncated, info
     
     def _update_discovery_buffer(self, exploration_result):
