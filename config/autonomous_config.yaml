@@ -42,7 +42,7 @@ agent:
     net_arch:
       pi: [64, 32]  # Policy network
       vf: [64, 32]  # Value function network
-    activation_fn: "relu"
+    activation_fn: "relu"  # Will be mapped to torch.nn.ReLU in code
     ortho_init: true
     normalize_images: true
     optimizer_kwargs:

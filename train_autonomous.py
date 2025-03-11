@@ -356,9 +356,9 @@ def train(config_path):
     
     # Create optimized policy kwargs
     agent_config = config.get("agent", {})
+    policy_kwargs = {}
     
-    # Define an optimized network architecture with faster feature extraction
-    # Using smaller networks with appropriate activation functions for faster learning
+    # Start with some sensible defaults
     policy_kwargs = {
         "net_arch": {
             "pi": [64, 32],  # Smaller policy network
@@ -379,8 +379,30 @@ def train(config_path):
         # Carefully merge, prioritizing user settings where provided
         if "net_arch" in user_policy_kwargs:
             policy_kwargs["net_arch"] = user_policy_kwargs["net_arch"]
+        
+        # Handle activation function - convert from string to actual function if needed
         if "activation_fn" in user_policy_kwargs:
-            policy_kwargs["activation_fn"] = user_policy_kwargs["activation_fn"]
+            activation_str = user_policy_kwargs["activation_fn"]
+            if isinstance(activation_str, str):
+                # Map common activation function strings to torch functions
+                activation_map = {
+                    "relu": torch.nn.ReLU,
+                    "tanh": torch.nn.Tanh,
+                    "sigmoid": torch.nn.Sigmoid,
+                    "leaky_relu": torch.nn.LeakyReLU,
+                    "elu": torch.nn.ELU
+                }
+                if activation_str.lower() in activation_map:
+                    policy_kwargs["activation_fn"] = activation_map[activation_str.lower()]
+                else:
+                    logger.warning(f"Unknown activation function: {activation_str}, using default (ReLU)")
+            else:
+                policy_kwargs["activation_fn"] = user_policy_kwargs["activation_fn"]
+        
+        # Copy other kwargs
+        for key in ["ortho_init", "normalize_images", "optimizer_kwargs"]:
+            if key in user_policy_kwargs:
+                policy_kwargs[key] = user_policy_kwargs[key]
     
     # Initialize the agent
     logger.info("Initializing PPO agent")
