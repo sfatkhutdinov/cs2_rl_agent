@@ -570,6 +570,17 @@ class AutonomousCS2Environment(gym.Wrapper):
                             except Exception as metric_error:
                                 self.logger.debug(f"Error comparing metric {metric}: {str(metric_error)}")
                                 continue  # Skip this metric but continue with others
+                    elif isinstance(observation, np.ndarray) and isinstance(self.last_observation, np.ndarray):
+                        # For image or vector observations
+                        # Check dimensions and dtype match before comparison
+                        try:
+                            if (observation.shape == self.last_observation.shape and 
+                                observation.dtype == self.last_observation.dtype):
+                                obs_diff = np.mean(np.abs(observation - self.last_observation))
+                                if obs_diff > 0.1:  # If observation changed significantly
+                                    reward += 0.02
+                        except Exception as array_error:
+                            self.logger.debug(f"Error comparing array observations: {str(array_error)}")
                 except Exception as compare_error:
                     self.logger.debug(f"Error comparing observations: {str(compare_error)}")
                     # Log additional details to help diagnose issues
@@ -578,17 +589,6 @@ class AutonomousCS2Environment(gym.Wrapper):
                             obs_val = observation.get(key)
                             last_val = self.last_observation.get(key)
                             self.logger.debug(f"Key: {key}, Current: {type(obs_val)}, Last: {type(last_val)}")
-                elif isinstance(observation, np.ndarray) and isinstance(self.last_observation, np.ndarray):
-                    # For image or vector observations
-                    # Check dimensions and dtype match before comparison
-                    try:
-                        if (observation.shape == self.last_observation.shape and 
-                            observation.dtype == self.last_observation.dtype):
-                            obs_diff = np.mean(np.abs(observation - self.last_observation))
-                            if obs_diff > 0.1:  # If observation changed significantly
-                                reward += 0.02
-                    except Exception as array_error:
-                        self.logger.debug(f"Error comparing array observations: {str(array_error)}")
         
         except Exception as e:
             self.logger.error(f"Error in exploration action handling: {str(e)}")
