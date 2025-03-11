@@ -1,0 +1,105 @@
+# Cities: Skylines 2 RL Agent - Full Exploration Configuration
+
+# Interface Settings
+interface:
+  type: "auto_vision"  # Use auto-detection for maximum adaptability
+  vision:
+    detection_method: "ocr"  # OCR works better for initial exploration
+    ocr_confidence: 0.5  # Lower threshold to detect more UI elements
+
+# Environment Settings
+environment:
+  observation_space:
+    include_visual: true
+    image_size: [224, 224]  # Larger image for better context
+    grayscale: false
+    include_metrics: true
+    metrics:
+      - "population"
+      - "happiness"
+      - "budget_balance"
+      - "traffic_flow"
+      - "pollution"
+      - "land_value"
+  action_space:
+    # More diverse action set for exploration
+    zone:
+      - "residential"
+      - "commercial"
+      - "industrial"
+      - "office"
+    infrastructure:
+      - "road_straight"
+      - "road_curve"
+      - "highway"
+      - "public_transport"
+      - "power"
+      - "water"
+    budget:
+      - "increase_residential_budget"
+      - "decrease_residential_budget"
+      - "increase_commercial_budget"
+      - "decrease_commercial_budget"
+      - "increase_industrial_budget"
+      - "decrease_industrial_budget"
+      - "increase_transport_budget"
+      - "decrease_transport_budget"
+    # Menu exploration
+    menu:
+      - "open_roads_menu"
+      - "open_zoning_menu"
+      - "open_services_menu"
+      - "open_utilities_menu"
+  reward:
+    # Balanced reward function
+    population_growth: 1.0
+    happiness: 1.0
+    budget_balance: 1.0
+    traffic_flow: 1.0
+    pollution_penalty: -0.5
+    bankruptcy_penalty: -10.0
+    # Reward exploration
+    exploration_bonus: 0.1
+  time_scale: 3  # Fastest game speed
+  max_episode_steps: 5000  # Longer episodes for exploration
+
+# Agent Settings
+agent:
+  algorithm: "PPO"  # PPO handles exploration well
+  ppo:
+    n_steps: 256
+    batch_size: 64
+    n_epochs: 10
+    gamma: 0.99
+    gae_lambda: 0.95
+    clip_range: 0.2
+    learning_rate: 0.0003
+    ent_coef: 0.05  # Higher entropy coefficient for more exploration
+    vf_coef: 0.5
+    max_grad_norm: 0.5
+  network:
+    cnn:
+      filters: [32, 64, 64, 128]
+      kernel_sizes: [8, 4, 3, 3]
+      strides: [4, 2, 1, 1]
+    mlp:
+      hidden_layers: [512, 256]
+    use_lstm: true  # Use LSTM for better sequential decision making
+    lstm_units: 256
+
+# Training Settings
+training:
+  total_timesteps: 10000000  # Very long training
+  eval_freq: 50000
+  n_eval_episodes: 5
+  save_freq: 100000
+  log_interval: 1
+  random_seed: null  # Random seed for more exploration
+  n_envs: 1  # Single environment
+
+# Paths
+paths:
+  logs: "logs"
+  models: "models"
+  data: "data"
+  tensorboard: "logs/tensorboard" 
