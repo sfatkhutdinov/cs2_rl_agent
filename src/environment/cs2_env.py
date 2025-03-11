@@ -187,47 +187,36 @@ class CS2Environment(gym.Env):
         
         return observation, reward, terminated, truncated, info
     
-    def reset(self, *, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
+    def reset(self, seed=None, options=None):
         """
-        Reset the environment.
+        Reset the environment to initial state.
         
         Args:
-            seed: Random seed
-            options: Additional options
+            seed: Optional random seed for reproducibility
+            options: Optional dictionary with additional options
             
         Returns:
-            Tuple of (observation, info)
+            observation: Initial observation
+            info: Additional information dictionary
         """
-        super().reset(seed=seed)
-        
-        # Reset the game
-        if not self.interface.reset_game():
-            self.logger.warning("Failed to reset the game. Attempting to reconnect...")
-            self.interface.disconnect()
-            if not self.interface.connect():
-                self.logger.error("Failed to reconnect to the game.")
-                raise RuntimeError("Failed to reconnect to the game.")
-        
-        # Set the game speed
-        game_speed = self.config["environment"]["time_scale"]
-        self.interface.set_game_speed(game_speed)
+        # Set seed if provided
+        if seed is not None:
+            np.random.seed(seed)
+            
+        # Reset interface and get initial observation
+        self.interface.reset()
+        observation = self._get_observation()
         
         # Reset internal state
-        self.episode_steps = 0
-        self.total_reward = 0.0
-        self.last_metrics = {}
+        self.current_step = 0
+        self.last_metrics = None
+        self.cumulative_reward = 0.0
         
-        # Get initial state
-        game_state = self.interface.get_game_state()
-        observation = self._extract_observation(game_state)
-        
-        # Store current state for rendering
-        self.current_state = game_state
-        
+        # Initialize info dictionary
         info = {
-            "metrics": game_state.get("metrics", {}),
-            "timestep": self.episode_steps,
-            "total_reward": self.total_reward
+            "metrics": self._get_metrics(),
+            "game_state": "running",
+            "current_step": self.current_step
         }
         
         return observation, info

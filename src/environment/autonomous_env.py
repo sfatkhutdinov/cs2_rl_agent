@@ -90,16 +90,33 @@ class AutonomousCS2Environment(gym.Wrapper):
         
         self.logger.info(f"Extended action space from {base_action_space_n} to {self.action_space.n} actions")
     
-    def reset(self):
-        """Reset the environment and initialize exploration state."""
-        observation = self.env.reset()
-        self.last_observation = observation
+    def reset(self, seed=None, options=None):
+        """
+        Reset the environment and optionally set the random seed.
+        
+        Args:
+            seed: Optional random seed for reproducibility
+            options: Optional dictionary with additional options
+            
+        Returns:
+            observation: Initial observation
+            info: Additional information
+        """
+        # Set seed if provided
+        if seed is not None:
+            np.random.seed(seed)
+            
+        # Reset exploration counters
         self.exploration_counter = 0
-        self.menu_discovery_buffer = []
-        self.last_reward = 0
-        self.last_done = False
-        self.last_info = {}
-        return observation
+        self.menu_exploration_counter = 0
+        
+        # Reset base environment
+        obs, info = self.env.reset()
+        
+        # Reset menu explorer
+        self.menu_explorer.reset()
+        
+        return obs, info
     
     def step(self, action):
         """
