@@ -59,7 +59,7 @@ def make_env(rank, config, seed=0):
                         "ocr_confidence": config.get("interface", {}).get("ocr_confidence", 0.6),
                         "template_threshold": config.get("interface", {}).get("template_threshold", 0.7),
                         "cache_detections": config.get("interface", {}).get("cache_detections", True),
-                        "screen_region": None  # Will be auto-detected
+                        "screen_region": config.get("interface", {}).get("vision", {}).get("screen_region", [0, 0, 1920, 1080])
                     }
                 }
             }
