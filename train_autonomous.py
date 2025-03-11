@@ -372,27 +372,24 @@ def train(config_path):
         "optimizer_kwargs": {
             "eps": 1e-5,           # Prevent division by zero
             "weight_decay": 1e-5,  # Slight regularization
-        },
-        # Enhanced feature extraction for combined observation spaces
-        "features_extractor_kwargs": {
-            "cnn_output_dim": 256,  # Dimension for CNN output (for visual part)
-            "mlp_extractor_net_arch": [128, 64]  # Architecture for MLP extracting features from numerical data
         }
+        # Remove all features_extractor_kwargs to let SB3 choose defaults
     }
     
-    # Determine observation space type to adjust feature extractor parameters
+    # Logging observation space type
     env_temp = env
     while hasattr(env_temp, "env"):
         env_temp = env_temp.env
         if hasattr(env_temp, "observation_space"):
             break
     
-    # If the observation space is not a Dict, modify the kwargs to use features_dim instead
-    if not isinstance(env_temp.observation_space, gym.spaces.Dict):
-        logger.info("Using box observation space, adjusting feature extractor parameters")
-        policy_kwargs["features_extractor_kwargs"] = {
-            "features_dim": 256  # Only use features_dim for non-Dict observation spaces
-        }
+    obs_space_type = "unknown"
+    if isinstance(env_temp.observation_space, gym.spaces.Dict):
+        obs_space_type = "dict"
+    elif isinstance(env_temp.observation_space, gym.spaces.Box):
+        obs_space_type = "box"
+    
+    logger.info(f"Using {obs_space_type} observation space type: {env_temp.observation_space}")
     
     # Set CUDA optimizations for better performance
     if torch.cuda.is_available():
@@ -414,11 +411,6 @@ def train(config_path):
         # Handle nested dictionaries like net_arch
         if "net_arch" in user_policy_kwargs:
             policy_kwargs["net_arch"] = user_policy_kwargs["net_arch"]
-        
-        # Handle features extractor kwargs, merging rather than replacing
-        if "features_extractor_kwargs" in user_policy_kwargs:
-            for k, v in user_policy_kwargs["features_extractor_kwargs"].items():
-                policy_kwargs["features_extractor_kwargs"][k] = v
         
         # Handle activation function - convert from string to actual function if needed
         if "activation_fn" in user_policy_kwargs:
