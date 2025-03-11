@@ -400,9 +400,25 @@ def train(config_path):
                 policy_kwargs["activation_fn"] = user_policy_kwargs["activation_fn"]
         
         # Copy other kwargs
-        for key in ["ortho_init", "normalize_images", "optimizer_kwargs"]:
+        for key in ["ortho_init", "normalize_images"]:
             if key in user_policy_kwargs:
                 policy_kwargs[key] = user_policy_kwargs[key]
+        
+        # Handle optimizer_kwargs separately to ensure numeric values are properly parsed
+        if "optimizer_kwargs" in user_policy_kwargs:
+            optimizer_kwargs = {}
+            for k, v in user_policy_kwargs["optimizer_kwargs"].items():
+                # Convert numeric string values to appropriate types
+                if isinstance(v, str):
+                    try:
+                        # Try to convert to float if it's a numeric string
+                        optimizer_kwargs[k] = float(v)
+                    except ValueError:
+                        # If conversion fails, keep original value
+                        optimizer_kwargs[k] = v
+                else:
+                    optimizer_kwargs[k] = v
+            policy_kwargs["optimizer_kwargs"] = optimizer_kwargs
     
     # Initialize the agent
     logger.info("Initializing PPO agent")
