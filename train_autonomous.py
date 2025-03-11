@@ -157,57 +157,56 @@ def make_env(rank, config, seed=0):
 
 def train(config_path):
     """
-    Train the agent using the provided configuration.
+    Train an autonomous agent using the configuration file.
     
     Args:
-        config_path: Path to the YAML configuration file
+        config_path: Path to the configuration file
     """
     # Load configuration
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
     
-    # Set random seeds for reproducibility
-    seed = config.get("seed", 42)
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    
-    # Set up logging and directories
+    # Setup directories
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    experiment_name = config.get("experiment_name", "autonomous_agent")
-    log_dir = os.path.join(config.get("paths", {}).get("log_dir", "logs"), f"{experiment_name}_{timestamp}")
-    model_dir = os.path.join(config.get("paths", {}).get("model_dir", "models"), f"{experiment_name}_{timestamp}")
-    tb_log_dir = os.path.join(config.get("paths", {}).get("tensorboard_dir", "tensorboard"), f"{experiment_name}_{timestamp}")
+    experiment_name = config.get("experiment_name", f"autonomous_{timestamp}")
     
-    # Create directories
+    base_dir = os.path.join("experiments", experiment_name)
+    log_dir = os.path.join(base_dir, "logs")
+    model_dir = os.path.join(base_dir, "models")
+    tb_log_dir = os.path.join(base_dir, "tensorboard")
+    
     os.makedirs(log_dir, exist_ok=True)
     os.makedirs(model_dir, exist_ok=True)
     os.makedirs(tb_log_dir, exist_ok=True)
     
-    # Save the configuration
-    with open(os.path.join(log_dir, "config.yaml"), 'w') as f:
-        yaml.dump(config, f)
+    # Set seed for reproducibility
+    seed = config.get("seed", 42)
+    set_random_seed(seed)
     
-    # Determine number of environments to run in parallel
+    # Add memory monitoring
+    memory_monitor_enabled = config.get("memory_monitor", {}).get("enabled", True)
+    memory_usage_limit = config.get("memory_monitor", {}).get("memory_limit_gb", 12)  # Default 12GB limit
+    disk_usage_limit = config.get("memory_monitor", {}).get("disk_limit_gb", 50)  # Default 50GB limit
+    check_interval = config.get("memory_monitor", {}).get("check_interval", 10000)  # Every 10k steps
+    
+    if memory_monitor_enabled:
+        logger.info(f"Memory monitoring enabled. Limits: {memory_usage_limit}GB RAM, {disk_usage_limit}GB disk")
+    
+    # Create environment from config
     n_envs = config.get("training", {}).get("n_envs", 1)
-    
-    # Only use 1 environment for this type of game interaction
-    n_envs = 1
+    logger.info(f"Creating {n_envs} environment(s)")
     
     # Create vectorized environment
-    logger.info(f"Creating {n_envs} environments")
+    env = DummyVecEnv([make_env(i, config, seed + i) for i in range(n_envs)])
     
-    env_fns = [make_env(i, config, seed) for i in range(n_envs)]
-    if n_envs == 1:
-        env = DummyVecEnv(env_fns)
-    else:
-        env = SubprocVecEnv(env_fns)
-    
-    # Define callbacks
+    # Set up checkpoint callback
+    checkpoint_freq = config.get("training", {}).get("checkpoint_freq", 10000)
     checkpoint_callback = CheckpointCallback(
-        save_freq=max(100, config.get("training", {}).get("checkpoint_freq", 10000) // n_envs),
+        save_freq=max(100, checkpoint_freq // n_envs),
         save_path=model_dir,
-        name_prefix="autonomous_model"
+        name_prefix="autonomous",
+        save_replay_buffer=False,
+        save_vecnormalize=True
     )
     
     # Create evaluation environment if needed
@@ -227,47 +226,157 @@ def train(config_path):
     else:
         callbacks = [checkpoint_callback]
     
-    # Create policy kwargs
-    policy_kwargs = config.get("agent", {}).get("policy_kwargs", {})
+    # Add memory monitoring callback if enabled
+    if memory_monitor_enabled:
+        class MemoryMonitorCallback:
+            def __init__(self, memory_limit_gb, disk_limit_gb, check_interval, model_dir):
+                self.memory_limit_bytes = memory_limit_gb * 1024 * 1024 * 1024
+                self.disk_limit_bytes = disk_limit_gb * 1024 * 1024 * 1024
+                self.check_interval = check_interval
+                self.last_check = 0
+                self.model_dir = model_dir
+                
+            def __call__(self, locals, globals):
+                # Get current timestep
+                timestep = locals.get('timestep', 0)
+                
+                # Only check periodically
+                if timestep - self.last_check < self.check_interval:
+                    return True
+                
+                self.last_check = timestep
+                
+                # Check RAM usage
+                try:
+                    import psutil
+                    process = psutil.Process(os.getpid())
+                    memory_usage = process.memory_info().rss
+                    memory_percent = memory_usage / self.memory_limit_bytes * 100
+                    
+                    # Check disk usage
+                    disk_usage = self._get_dir_size(self.model_dir)
+                    disk_percent = disk_usage / self.disk_limit_bytes * 100
+                    
+                    logger.info(f"Memory usage: {memory_usage / 1024 / 1024 / 1024:.2f}GB ({memory_percent:.1f}%), "
+                                f"Disk usage: {disk_usage / 1024 / 1024 / 1024:.2f}GB ({disk_percent:.1f}%)")
+                    
+                    # Handle excessive memory usage
+                    if memory_usage > self.memory_limit_bytes:
+                        logger.warning(f"Memory limit exceeded ({memory_percent:.1f}%)! Saving model and stopping...")
+                        # Save the model before stopping
+                        model_path = os.path.join(self.model_dir, f"memory_limit_model_{timestep}")
+                        locals['self'].save(model_path)
+                        return False  # Stop training
+                        
+                    # Handle excessive disk usage
+                    if disk_usage > self.disk_limit_bytes:
+                        logger.warning(f"Disk limit exceeded ({disk_percent:.1f}%)! Cleaning up old checkpoints...")
+                        # Clean up old checkpoints except the best ones
+                        self._cleanup_old_checkpoints()
+                        
+                except Exception as e:
+                    logger.error(f"Error in memory monitoring: {e}")
+                
+                return True
+                
+            def _get_dir_size(self, path):
+                """Get the size of a directory in bytes"""
+                total_size = 0
+                for dirpath, dirnames, filenames in os.walk(path):
+                    for f in filenames:
+                        fp = os.path.join(dirpath, f)
+                        total_size += os.path.getsize(fp)
+                return total_size
+                
+            def _cleanup_old_checkpoints(self):
+                """Clean up old checkpoints, keeping only the best and latest ones"""
+                try:
+                    # Find all checkpoint files
+                    checkpoint_files = []
+                    for dirpath, dirnames, filenames in os.walk(self.model_dir):
+                        for f in filenames:
+                            if f.endswith('.zip') and not dirpath.endswith('best_model'):
+                                fp = os.path.join(dirpath, f)
+                                checkpoint_files.append((fp, os.path.getmtime(fp)))
+                    
+                    # Sort by modification time (oldest first)
+                    checkpoint_files.sort(key=lambda x: x[1])
+                    
+                    # Keep the 5 most recent checkpoints, delete the rest
+                    files_to_delete = checkpoint_files[:-5]
+                    total_freed = 0
+                    for file_path, _ in files_to_delete:
+                        size = os.path.getsize(file_path)
+                        os.remove(file_path)
+                        total_freed += size
+                        logger.info(f"Deleted old checkpoint: {file_path}")
+                    
+                    logger.info(f"Freed {total_freed / 1024 / 1024:.2f}MB of disk space")
+                except Exception as e:
+                    logger.error(f"Error cleaning up checkpoints: {e}")
+        
+        # Add memory monitor to callbacks
+        memory_callback = MemoryMonitorCallback(
+            memory_limit_gb=memory_usage_limit,
+            disk_limit_gb=disk_usage_limit,
+            check_interval=check_interval,
+            model_dir=model_dir
+        )
+        callbacks.append(memory_callback)
     
-    # Convert string network architectures to actual objects if present
-    if "net_arch" in policy_kwargs and isinstance(policy_kwargs["net_arch"], list):
-        # Handle LSTM case - stable-baselines3 doesn't directly support LSTM in net_arch
-        # So we'll use a simpler architecture that works with MultiInputPolicy
-        if any(isinstance(item, dict) and "lstm" in item for item in policy_kwargs["net_arch"]):
-            logger.info("LSTM requested but not directly supported - using standard architecture")
-            # Use a simpler architecture compatible with MultiInputPolicy
-            policy_kwargs["net_arch"] = [128, 128, dict(pi=[64], vf=[64])]
-            
-            # Note: For true LSTM support, we would need to use sb3-contrib's RecurrentPPO
-            # or implement a custom policy class
+    # Create optimized policy kwargs
+    agent_config = config.get("agent", {})
+    
+    # Define an optimized network architecture with faster feature extraction
+    # Using smaller networks with appropriate activation functions for faster learning
+    policy_kwargs = {
+        "net_arch": {
+            "pi": [64, 32],  # Smaller policy network
+            "vf": [64, 32]   # Smaller value network
+        },
+        "activation_fn": torch.nn.ReLU,
+        "ortho_init": True,  # Use orthogonal initialization for stability
+        "normalize_images": True,  # Normalize image inputs for faster convergence
+        "optimizer_class": torch.optim.Adam,
+        "optimizer_kwargs": {
+            "eps": 1e-5,  # Prevent division by zero
+        }
+    }
+    
+    # Override with user config if provided
+    if "policy_kwargs" in agent_config:
+        user_policy_kwargs = agent_config["policy_kwargs"]
+        # Carefully merge, prioritizing user settings where provided
+        if "net_arch" in user_policy_kwargs:
+            policy_kwargs["net_arch"] = user_policy_kwargs["net_arch"]
+        if "activation_fn" in user_policy_kwargs:
+            policy_kwargs["activation_fn"] = user_policy_kwargs["activation_fn"]
     
     # Initialize the agent
     logger.info("Initializing PPO agent")
     
     # Get agent configuration
-    agent_config = config.get("agent", {})
     use_sde = agent_config.get("use_sde", False)
     
-    # Initialize PPO with appropriate parameters
+    # Initialize PPO with appropriate parameters optimized for sample efficiency
     model = PPO(
         policy=agent_config.get("policy_type", "MultiInputPolicy"),
         env=env,
         learning_rate=agent_config.get("learning_rate", 3e-4),
-        n_steps=agent_config.get("n_steps", 2048),
-        batch_size=agent_config.get("batch_size", 64),
-        n_epochs=agent_config.get("n_epochs", 10),
+        n_steps=agent_config.get("n_steps", 1024),  # Smaller buffer for faster updates
+        batch_size=agent_config.get("batch_size", 128),  # Larger batch for better gradients
+        n_epochs=agent_config.get("n_epochs", 8),  # Slightly fewer epochs
         gamma=agent_config.get("gamma", 0.99),
         gae_lambda=agent_config.get("gae_lambda", 0.95),
         clip_range=agent_config.get("clip_range", 0.2),
         clip_range_vf=agent_config.get("clip_range_vf", None),
         normalize_advantage=agent_config.get("normalize_advantage", True),
-        ent_coef=agent_config.get("ent_coef", 0.01),
-        vf_coef=agent_config.get("vf_coef", 0.5),
+        ent_coef=agent_config.get("ent_coef", 0.005),  # Lower entropy for more exploitation
+        vf_coef=agent_config.get("vf_coef", 0.75),  # Higher value loss weight
         max_grad_norm=agent_config.get("max_grad_norm", 0.5),
         use_sde=use_sde,
         sde_sample_freq=agent_config.get("sde_sample_freq", -1) if use_sde else None,
-        target_kl=agent_config.get("target_kl", None),
+        target_kl=agent_config.get("target_kl", 0.015),  # Target KL for early stopping
         tensorboard_log=tb_log_dir,
         policy_kwargs=policy_kwargs,
         verbose=1,

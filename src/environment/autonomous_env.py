@@ -8,6 +8,7 @@ from src.interface.auto_vision_interface import AutoVisionInterface
 from src.interface.menu_explorer import MenuExplorer
 from src.environment.cs2_env import CS2Environment
 from stable_baselines3.common.monitor import Monitor
+import pyautogui
 
 class AutonomousCS2Environment(gym.Wrapper):
     """
@@ -63,32 +64,80 @@ class AutonomousCS2Environment(gym.Wrapper):
         self.logger.info("Autonomous environment initialized with extended action space")
     
     def _extend_action_space(self):
-        """Extend the base environment's action space with exploration-specific actions."""
-        # Get the original action space size
-        base_action_space_n = self.env.action_space.n
-        
-        # Add exploration-specific actions
-        exploration_actions = [
-            "explore_menu",
-            "explore_ui",
-            "random_action",
-            "repeat_last_action",
-            "undo_last_action"
+        """Extend the action space with additional control actions"""
+        # Create wrappers for the interface methods
+        actions = [
+            # Original base actions (keep as is)
+            # ... existing code ...
         ]
         
-        # Create the extended action space
-        self.action_space = spaces.Discrete(base_action_space_n + len(exploration_actions))
+        # Add camera rotation actions
+        actions.extend([
+            Action(
+                name="rotate_camera_left",
+                action_fn=lambda: self.env.interface.rotate_camera_left(),
+                action_type=ActionType.CAMERA_CONTROL
+            ),
+            Action(
+                name="rotate_camera_right",
+                action_fn=lambda: self.env.interface.rotate_camera_right(),
+                action_type=ActionType.CAMERA_CONTROL
+            ),
+            Action(
+                name="reset_camera_rotation",
+                action_fn=lambda: self.env.interface.reset_camera_rotation(),
+                action_type=ActionType.CAMERA_CONTROL
+            ),
+            Action(
+                name="tilt_camera_up",
+                action_fn=lambda: self.env.interface.tilt_camera_up(),
+                action_type=ActionType.CAMERA_CONTROL
+            ),
+            Action(
+                name="tilt_camera_down",
+                action_fn=lambda: self.env.interface.tilt_camera_down(),
+                action_type=ActionType.CAMERA_CONTROL
+            ),
+        ])
         
-        # Store mapping of new actions
-        self.exploration_actions = {
-            base_action_space_n + i: action 
-            for i, action in enumerate(exploration_actions)
-        }
+        # Add keyboard actions (all keys except restricted ones)
+        alphabet = "abcdefghijklmnopqrstuvwxyz"
+        numbers = "0123456789"
+        special_keys = [
+            'space', 'tab', 'enter', 'backspace', 'delete',
+            'up', 'down', 'left', 'right', 'home', 'end',
+            'pageup', 'pagedown', 'insert', '-', '=', '[', ']',
+            '\\', ';', "'", ',', '.', '/'
+        ]
         
-        # Store the size of the base action space
-        self.base_action_space_n = base_action_space_n
+        # Add all regular keys
+        for key in alphabet + numbers + ''.join(special_keys):
+            if key != 'esc':  # Skip ESC key
+                actions.append(
+                    Action(
+                        name=f"press_key_{key}",
+                        action_fn=lambda k=key: self.env.interface.press_key(k),
+                        action_type=ActionType.KEYBOARD
+                    )
+                )
         
-        self.logger.info(f"Extended action space from {base_action_space_n} to {self.action_space.n} actions")
+        # Add common modifier combinations (excluding ALT+F4)
+        modifiers = ['shift', 'ctrl']
+        for modifier in modifiers:
+            for key in alphabet + numbers:
+                actions.append(
+                    Action(
+                        name=f"{modifier}_{key}",
+                        action_fn=lambda m=modifier, k=key: self.env.interface.press_hotkey(m, k),
+                        action_type=ActionType.KEYBOARD
+                    )
+                )
+        
+        # Update action space
+        original_size = self.env.action_space.n
+        self.action_space = gym.spaces.Discrete(len(actions))
+        self.action_handlers = actions
+        self.logger.info(f"Extended action space from {original_size} to {len(actions)} actions")
     
     def reset(self, seed=None, options=None):
         """
@@ -126,22 +175,26 @@ class AutonomousCS2Environment(gym.Wrapper):
             action: The action to take (index in the action space)
             
         Returns:
-            observation, reward, done, info - Standard gym step return values
+            observation, reward, terminated, truncated, info - Standard gymnasium step return values
         """
         self.total_steps += 1
         self.exploration_counter += 1
         
         # Sometimes override with exploratory actions if we're in exploration mode
         if np.random.random() < self.exploration_frequency:
-            action = self._get_exploratory_action()
+            # Instead of purely random exploration, use guided exploration based on city state
+            action = self._get_guided_exploratory_action()
+        else:
+            # Check if the action is valid given the current state
+            action = self._apply_action_masking(action)
         
         # Process the action
-        if action >= len(self.action_names) - 7:  # If it's an exploration action
-            observation, reward, done, info = self._handle_exploration_action(action)
+        if action in self.action_handlers:  # If it's an exploration action
+            observation, reward, terminated, truncated, info = self._handle_exploration_action(action)
         else:
             # Use base environment for regular actions
             try:
-                observation, reward, done, info = self.env.step(action)
+                observation, reward, terminated, truncated, info = self.env.step(action)
                 self.successful_actions += 1
             except Exception as e:
                 self.logger.warning(f"Error executing action {action}: {str(e)}")
@@ -149,14 +202,25 @@ class AutonomousCS2Environment(gym.Wrapper):
                 # Return previous observation with a small penalty
                 observation = self.last_observation
                 reward = -0.1
-                done = self.last_done
+                terminated = self.last_done
+                truncated = False
                 info = self.last_info.copy()
                 info['error'] = str(e)
+        
+        # Store action history for learning patterns
+        if not hasattr(self, 'action_history'):
+            self.action_history = []
+        self.action_history.append((action, reward))
+        if len(self.action_history) > 100:  # Keep last 100 actions
+            self.action_history = self.action_history[-100:]
+        
+        # Update success rate for actions to guide future exploration
+        self._update_action_success_rates(action, reward)
         
         # Update last state
         self.last_observation = observation
         self.last_reward = reward
-        self.last_done = done
+        self.last_done = terminated
         self.last_info = info
         
         # Log progress periodically
@@ -165,23 +229,138 @@ class AutonomousCS2Environment(gym.Wrapper):
                            f"Successful actions: {self.successful_actions}, "
                            f"Failed actions: {self.failed_actions}")
         
-        return observation, reward, done, info
+        return observation, reward, terminated, truncated, info
     
-    def _get_exploratory_action(self):
+    def _apply_action_masking(self, action):
         """
-        Get an action that promotes exploration.
+        Apply action masking to prevent illogical or impossible actions.
         
+        Args:
+            action: The proposed action
+            
         Returns:
-            An action index for exploration
+            Potentially modified action
         """
-        # Different exploration strategies
-        if np.random.random() < self.random_action_frequency:
-            # Completely random action
-            return np.random.randint(0, self.action_space.n)
+        # If not a base environment action, no masking needed
+        if action >= self.env.action_space.n:
+            return action
+            
+        # Get current metrics to guide masking
+        if hasattr(self.env, 'interface') and hasattr(self.env.interface, 'get_metrics'):
+            try:
+                metrics = self.env.interface.get_metrics()
+                
+                # Prevent budget actions when budget is healthy
+                if action in range(11, 19) and metrics.get('budget_balance', 0) > 1000:
+                    # Randomly select a more useful action instead
+                    return np.random.randint(0, 11)  # Focus on zoning/infrastructure
+                
+                # Prevent building expensive infrastructure when budget is low
+                if (action in range(5, 11) and metrics.get('budget_balance', 0) < 0 
+                    and np.random.random() < 0.7):  # 70% chance to override
+                    # Use budget-focused actions instead
+                    budget_actions = list(range(11, 19))
+                    return np.random.choice(budget_actions)
+                    
+                # If traffic is high, prioritize roads
+                if metrics.get('traffic', 0) > 70 and action not in [5, 6]:  # Not a road action
+                    if np.random.random() < 0.6:  # 60% chance to override
+                        return 5  # Use road action instead
+            except:
+                pass  # If metrics can't be fetched, don't mask
         
-        # Choose one of the exploration-specific actions
-        exploration_options = list(self.exploration_actions.values())
-        return np.random.choice(exploration_options)
+        return action
+    
+    def _update_action_success_rates(self, action, reward):
+        """
+        Update success rates for actions based on rewards received.
+        
+        Args:
+            action: The action taken
+            reward: The reward received
+        """
+        if not hasattr(self, 'action_success_rates'):
+            # Initialize success rates for all actions
+            self.action_success_rates = {
+                i: {'count': 0, 'success': 0, 'avg_reward': 0}
+                for i in range(self.action_space.n)
+            }
+        
+        # Update the count for this action
+        self.action_success_rates[action]['count'] += 1
+        
+        # Update success (positive reward = success)
+        if reward > 0:
+            self.action_success_rates[action]['success'] += 1
+            
+        # Update average reward using running average
+        count = self.action_success_rates[action]['count']
+        old_avg = self.action_success_rates[action]['avg_reward']
+        self.action_success_rates[action]['avg_reward'] = old_avg + (reward - old_avg) / count
+    
+    def _get_guided_exploratory_action(self):
+        """Get a guided exploratory action that strategically explores the environment"""
+        # 5% chance for completely random action to maintain some variety
+        if np.random.random() < 0.05:
+            return np.random.randint(0, self.action_space.n)
+            
+        # Use different exploration strategies based on probabilities
+        exploration_strategy = np.random.choice([
+            'camera_control',  # Move around the map
+            'ui_exploration',  # Interact with UI elements
+            'game_actions',    # Try game mechanics
+            'keyboard_testing' # Try keyboard shortcuts
+        ], p=[0.3, 0.3, 0.3, 0.1])
+        
+        # Get current metrics to guide actions
+        metrics = self.env.get_observation().get('metrics', {})
+        population = metrics.get('population', 0)
+        
+        if exploration_strategy == 'camera_control':
+            # Prioritize uncovered map areas if we're tracking exploration
+            if hasattr(self.env, 'exploration_grid') and hasattr(self.env, 'current_state') and 'camera_position' in self.env.current_state:
+                # Get actions related to camera movement
+                camera_actions = [i for i, a in enumerate(self.action_handlers) 
+                                if a.action_type == ActionType.CAMERA_CONTROL]
+                
+                # Include rotation actions with higher probability when exploring
+                rotation_actions = [i for i, a in enumerate(self.action_handlers)
+                                  if a.name in ["rotate_camera_left", "rotate_camera_right", 
+                                               "tilt_camera_up", "tilt_camera_down"]]
+                
+                # Combine regular camera movements with some rotation (70/30 split)
+                if np.random.random() < 0.3 and rotation_actions:
+                    return np.random.choice(rotation_actions)
+                else:
+                    return np.random.choice(camera_actions)
+            else:
+                # Fallback to any camera control action
+                camera_actions = [i for i, a in enumerate(self.action_handlers) 
+                                if a.action_type == ActionType.CAMERA_CONTROL]
+                return np.random.choice(camera_actions) if camera_actions else np.random.randint(0, self.action_space.n)
+        
+        elif exploration_strategy == 'keyboard_testing':
+            # Try keyboard actions
+            keyboard_actions = [i for i, a in enumerate(self.action_handlers) 
+                              if a.action_type == ActionType.KEYBOARD]
+            
+            # Prioritize common useful keys in city building games
+            priority_keys = [i for i, a in enumerate(self.action_handlers) 
+                            if a.action_type == ActionType.KEYBOARD and
+                            any(key in a.name for key in ['press_key_b', 'press_key_r', 'press_key_p', 
+                                                        'press_key_d', 'press_key_u', 'press_key_1', 
+                                                        'press_key_2', 'press_key_3'])]
+            
+            # 70% chance to use priority keys if available
+            if priority_keys and np.random.random() < 0.7:
+                return np.random.choice(priority_keys)
+            else:
+                return np.random.choice(keyboard_actions) if keyboard_actions else np.random.randint(0, self.action_space.n)
+                
+        # ... existing code for other strategies ...
+
+        # Default: return a random action if no strategy matched
+        return np.random.randint(0, self.action_space.n)
     
     def _handle_exploration_action(self, action):
         """
@@ -191,93 +370,157 @@ class AutonomousCS2Environment(gym.Wrapper):
             action: The exploration action to take
             
         Returns:
-            observation, reward, done, info - Standard gym step return values
+            observation, reward, terminated, truncated, info - Standard gymnasium step return values
         """
         self.menu_exploration_counter += 1
         
         # Get current screenshot for exploration
-        screenshot = self.env.interface.capture_screen()
+        try:
+            screenshot = self.env.interface.capture_screen()
+        except Exception as e:
+            self.logger.warning(f"Failed to capture screen: {str(e)}")
+            screenshot = None
         
         # Default return values (will be overridden if action succeeds)
         observation = self.last_observation
         reward = 0  # Neutral reward by default for exploration
-        done = False
-        info = {"exploration_action": self.action_names.get(action, "unknown")}
+        terminated = False
+        truncated = False
+        info = {"exploration_action": self.action_handlers[action].name}
         
         try:
             # Handle each exploration action type
-            if action == self.exploration_actions["explore_menu"]:
-                # Use menu explorer to find and click on menu elements
-                exploration_result = self.menu_explorer.explore_screen(screenshot)
+            if action in self.action_handlers:
+                action_name = self.action_handlers[action].name
                 
-                if exploration_result["action"] in ["click_menu", "click_submenu", "click_discovered"]:
-                    # Click on the discovered element
-                    self.env.interface.click_at_coordinates(
-                        exploration_result["position"][0], 
-                        exploration_result["position"][1]
-                    )
-                    
-                    # Add to discovery buffer if it's a new element
-                    self._update_discovery_buffer(exploration_result)
-                    
-                    # Small positive reward for discovering new elements
-                    reward = 0.05
-                    
-                    info["exploration_element"] = exploration_result.get("menu_name", 
-                                                                       exploration_result.get("element_name", "unknown"))
-                    time.sleep(0.5)  # Small delay to let UI update
+                if action_name == "explore_menu":
+                    # Use menu explorer to find and click on menu elements
+                    if screenshot is not None and hasattr(self.menu_explorer, 'explore_screen'):
+                        exploration_result = self.menu_explorer.explore_screen(screenshot)
+                        
+                        if "action" in exploration_result and exploration_result["action"] in ["click_menu", "click_submenu", "click_discovered"]:
+                            # Click on the discovered element if coordinates are provided
+                            if "position" in exploration_result and hasattr(self.env.interface, 'click_at_coordinates'):
+                                self.env.interface.click_at_coordinates(
+                                    exploration_result["position"][0], 
+                                    exploration_result["position"][1]
+                                )
+                                
+                                # Add to discovery buffer if it's a new element
+                                self._update_discovery_buffer(exploration_result)
+                                
+                                # Small positive reward for discovering new elements
+                                reward = 0.05
+                                
+                                info["exploration_element"] = exploration_result.get("menu_name", 
+                                                                                exploration_result.get("element_name", "unknown"))
+                                time.sleep(0.3)  # Reduced delay
+                        
+                        elif "action" in exploration_result and exploration_result["action"] == "random_click":
+                            # Random exploration click
+                            if "position" in exploration_result and hasattr(self.env.interface, 'click_at_coordinates'):
+                                self.env.interface.click_at_coordinates(
+                                    exploration_result["position"][0], 
+                                    exploration_result["position"][1]
+                                )
+                                time.sleep(0.1)  # Reduced delay
                 
-                elif exploration_result["action"] == "random_click":
-                    # Random exploration click
-                    self.env.interface.click_at_coordinates(
-                        exploration_result["position"][0], 
-                        exploration_result["position"][1]
-                    )
-                    time.sleep(0.2)
-            
-            elif action == self.exploration_actions["click_discovered"]:
-                # Click on a previously discovered element from the buffer
-                if self.menu_discovery_buffer:
-                    # Choose a random element from discovery buffer
-                    element = np.random.choice(self.menu_discovery_buffer)
-                    self.env.interface.click_at_coordinates(
-                        element["position"][0], 
-                        element["position"][1]
-                    )
-                    info["clicked_element"] = element.get("name", "unknown")
-                    time.sleep(0.3)
-            
-            elif action == self.exploration_actions["random_click"]:
-                # Make a completely random click
-                screen_width, screen_height = self.env.interface.screen_size
-                x = np.random.randint(0, screen_width)
-                y = np.random.randint(0, screen_height)
-                self.env.interface.click_at_coordinates(x, y)
-                info["random_click"] = (x, y)
-                time.sleep(0.2)
-            
-            elif action == self.exploration_actions["wait_and_observe"]:
-                # Just wait and observe changes
-                time.sleep(1.0)
-                info["waited"] = True
-            
-            elif action == self.exploration_actions["esc_menu"]:
-                # Press ESC to close menus
-                self.env.interface.press_key("escape")
-                time.sleep(0.3)
-                info["pressed_esc"] = True
-            
-            elif action == self.exploration_actions["scroll_down"]:
-                # Scroll down to see more content
-                self.env.interface.scroll_down()
-                time.sleep(0.2)
-                info["scrolled"] = "down"
-            
-            elif action == self.exploration_actions["scroll_up"]:
-                # Scroll up
-                self.env.interface.scroll_up()
-                time.sleep(0.2)
-                info["scrolled"] = "up"
+                elif action_name == "explore_ui":
+                    # Perform a random UI exploration action - more focused on center of screen
+                    screen_width, screen_height = self.env.interface.screen_region[2], self.env.interface.screen_region[3]
+                    
+                    # Focus more on the center area of the map (25-75% of screen)
+                    x = np.random.randint(int(screen_width * 0.25), int(screen_width * 0.75))
+                    y = np.random.randint(int(screen_height * 0.25), int(screen_height * 0.75))
+                    
+                    self.env.interface.click_at_coordinates(x, y)
+                    info["random_ui_click"] = (x, y)
+                    time.sleep(0.1)  # Reduced delay
+                
+                elif action_name == "random_action":
+                    # Perform a random base action
+                    random_action = np.random.randint(0, self.env.action_space.n)
+                    try:
+                        result = self.env.step(random_action)
+                        observation, reward, terminated, truncated, step_info = result
+                        info.update(step_info)
+                        info["random_base_action"] = random_action
+                    except Exception as e:
+                        self.logger.warning(f"Failed to execute random action {random_action}: {str(e)}")
+                
+                elif action_name == "repeat_last_action":
+                    # Do nothing special, let it use the last observation and reward
+                    info["repeated_last_action"] = True
+                
+                elif action_name == "undo_last_action":
+                    # Press escape key to cancel current action/tool
+                    if hasattr(self.env.interface, 'press_key'):
+                        self.env.interface.press_key('escape')
+                    else:
+                        pyautogui.press('escape')
+                    time.sleep(0.1)  # Reduced delay
+                    info["pressed_escape"] = True
+                
+                # Camera control actions
+                elif action_name == "zoom_in":
+                    if hasattr(self.env.interface, 'zoom_in'):
+                        self.env.interface.zoom_in(amount=2)
+                        info["camera_action"] = "zoom_in"
+                        reward = 0.01  # Small reward for camera control
+                
+                elif action_name == "zoom_out":
+                    if hasattr(self.env.interface, 'zoom_out'):
+                        self.env.interface.zoom_out(amount=2)
+                        info["camera_action"] = "zoom_out"
+                        reward = 0.01
+                
+                elif action_name == "rotate_left":
+                    if hasattr(self.env.interface, 'rotate_camera'):
+                        self.env.interface.rotate_camera(direction='left')
+                        info["camera_action"] = "rotate_left"
+                        reward = 0.01
+                
+                elif action_name == "rotate_right":
+                    if hasattr(self.env.interface, 'rotate_camera'):
+                        self.env.interface.rotate_camera(direction='right')
+                        info["camera_action"] = "rotate_right"
+                        reward = 0.01
+                
+                elif action_name == "pan_left":
+                    if hasattr(self.env.interface, 'pan_view'):
+                        self.env.interface.pan_view(direction='left', distance=150)
+                        info["camera_action"] = "pan_left"
+                        reward = 0.01
+                
+                elif action_name == "pan_right":
+                    if hasattr(self.env.interface, 'pan_view'):
+                        self.env.interface.pan_view(direction='right', distance=150)
+                        info["camera_action"] = "pan_right"
+                        reward = 0.01
+                
+                elif action_name == "pan_up":
+                    if hasattr(self.env.interface, 'pan_view'):
+                        self.env.interface.pan_view(direction='up', distance=150)
+                        info["camera_action"] = "pan_up"
+                        reward = 0.01
+                
+                elif action_name == "pan_down":
+                    if hasattr(self.env.interface, 'pan_view'):
+                        self.env.interface.pan_view(direction='down', distance=150)
+                        info["camera_action"] = "pan_down"
+                        reward = 0.01
+                
+                elif action_name == "center_view":
+                    # Use HOME key to reset/center view if game supports it
+                    if hasattr(self.env.interface, 'press_key'):
+                        self.env.interface.press_key('home')
+                        info["camera_action"] = "center_view"
+                        reward = 0.02  # Slightly higher reward for centering
+                
+                else:
+                    self.logger.warning(f"Unknown exploration action: {action_name}")
+            else:
+                self.logger.warning(f"Unknown exploration action index: {action}")
         
         except Exception as e:
             self.logger.warning(f"Error in exploration action {action}: {str(e)}")
@@ -285,14 +528,17 @@ class AutonomousCS2Environment(gym.Wrapper):
             reward = -0.1  # Small penalty for errors
         
         # Capture updated observation
-        observation = self.env.get_observation()
+        try:
+            observation = self.env.get_observation()
+        except Exception as e:
+            self.logger.warning(f"Failed to get observation after exploration: {str(e)}")
         
         # Check if any changes occurred from our exploration
         if self._has_observation_changed(observation):
             reward += 0.02  # Small bonus if observation changed
             info["observation_changed"] = True
         
-        return observation, reward, done, info
+        return observation, reward, terminated, truncated, info
     
     def _update_discovery_buffer(self, exploration_result):
         """

@@ -40,6 +40,7 @@ if not exist tensorboard\autonomous mkdir tensorboard\autonomous
 echo Launching autonomous agent training...
 python train_autonomous.py --config config/autonomous_agent.yaml
 
+echo.
 echo Training complete or interrupted.
 echo Check the logs and models folders for results.
 pause 

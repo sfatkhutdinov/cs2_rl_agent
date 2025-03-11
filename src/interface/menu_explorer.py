@@ -74,6 +74,28 @@ class MenuExplorer:
             for r in regions
         ]
     
+    def reset(self):
+        """
+        Reset the exploration state.
+        
+        This method resets the internal state of the MenuExplorer, 
+        which is necessary when starting a new episode or when the 
+        game state has been reset.
+        """
+        self.logger.info("Resetting MenuExplorer state")
+        
+        # Reset exploration state
+        self.exploration_phase = "initial"
+        self.current_menu = None
+        self.current_submenu = None
+        self.clicks_since_discovery = 0
+        self.exploration_counter = 0
+        
+        # Don't clear menu_positions and menu_hierarchy as these are 
+        # valuable knowledge built up over time
+        
+        return True
+    
     def explore_screen(self, screenshot: np.ndarray) -> Dict[str, Any]:
         """
         Explore the screen for UI elements to interact with.

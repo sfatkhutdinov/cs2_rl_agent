@@ -246,6 +246,24 @@ class AutoVisionInterface(BaseInterface):
             self.logger.error(f"Failed to get visual observation: {str(e)}")
             return np.zeros((84, 84, 3), dtype=np.uint8)
     
+    def capture_screen(self) -> np.ndarray:
+        """
+        Capture the current screen without any processing.
+        
+        Returns:
+            NumPy array containing the raw screenshot
+        """
+        if not self.connected:
+            self.logger.warning("Not connected to the game.")
+            return np.zeros((self.screen_region[3], self.screen_region[2], 3), dtype=np.uint8)
+        
+        try:
+            screenshot = self.sct.grab(self.monitor)
+            return np.array(screenshot)
+        except Exception as e:
+            self.logger.error(f"Failed to capture screen: {str(e)}")
+            return np.zeros((self.screen_region[3], self.screen_region[2], 3), dtype=np.uint8)
+    
     def detect_ui_elements(self) -> bool:
         """
         Detect UI elements in the current screenshot.
@@ -499,7 +517,7 @@ class AutoVisionInterface(BaseInterface):
                 
                 # Click on the map position
                 map_x, map_y = position
-                pyautogui.click(map_x, map_y)
+                self._safe_click(map_x, map_y)
                 
             elif action_type == "infrastructure":
                 # Handle infrastructure actions
@@ -512,14 +530,19 @@ class AutoVisionInterface(BaseInterface):
                 
                 # Click on the map position
                 map_x, map_y = position
-                pyautogui.click(map_x, map_y)
+                self._safe_click(map_x, map_y)
                 
                 # If it's a road or pipe, we need two points
                 if infra_type in ["roads", "power", "water"]:
                     end_position = action.get("end_position", None)
                     if end_position:
                         end_x, end_y = end_position
-                        pyautogui.click(end_x, end_y)
+                        self._safe_click(end_x, end_y)
+                
+            elif action_type == "budget":
+                # Handle budget actions
+                budget_action = action.get("budget_action", "")
+                return self._handle_budget_action(budget_action)
                 
             elif action_type == "game_control":
                 # Handle game control actions
@@ -544,6 +567,37 @@ class AutoVisionInterface(BaseInterface):
             self.logger.error(f"Failed to perform action: {str(e)}")
             return False
     
+    def _safe_click(self, x, y, button='left', clicks=1, interval=0.1):
+        """
+        Performs a click operation with safety measures to prevent triggering PyAutoGUI failsafe.
+        
+        Args:
+            x: X coordinate
+            y: Y coordinate
+            button: Mouse button to click ('left', 'right', 'middle')
+            clicks: Number of clicks
+            interval: Interval between clicks
+        """
+        try:
+            # Calculate maximum movement speed to avoid triggering failsafe
+            current_x, current_y = pyautogui.position()
+            distance = ((x - current_x) ** 2 + (y - current_y) ** 2) ** 0.5
+            
+            # If distance is large, use a slower move to prevent triggering failsafe
+            if distance > 500:
+                pyautogui.moveTo(x, y, duration=0.3)  # Slower movement for long distances
+            elif distance > 200:
+                pyautogui.moveTo(x, y, duration=0.1)  # Medium speed for medium distances
+            else:
+                pyautogui.moveTo(x, y, duration=0.05)  # Faster for short distances
+                
+            # Perform the click
+            pyautogui.click(x=x, y=y, button=button, clicks=clicks, interval=interval)
+            return True
+        except Exception as e:
+            self.logger.error(f"Click failed: {e}")
+            return False
+    
     def _click_zone_tool(self, zone_type: str) -> bool:
         """Click on a zone tool button."""
         # Use relative positions on screen for now
@@ -556,11 +610,12 @@ class AutoVisionInterface(BaseInterface):
             "residential": (screen_width * 0.1, screen_height * 0.9),
             "commercial": (screen_width * 0.15, screen_height * 0.9),
             "industrial": (screen_width * 0.2, screen_height * 0.9),
-            "office": (screen_width * 0.25, screen_height * 0.9)
+            "office": (screen_width * 0.25, screen_height * 0.9),
+            "delete_zone": (screen_width * 0.27, screen_height * 0.9)
         }
         
         if zone_type in positions:
-            pyautogui.click(positions[zone_type][0], positions[zone_type][1])
+            self._safe_click(positions[zone_type][0], positions[zone_type][1])
             return True
         else:
             self.logger.warning(f"Unknown zone type: {zone_type}")
@@ -574,17 +629,92 @@ class AutoVisionInterface(BaseInterface):
         
         # Positions are approximate and would work on most layouts
         positions = {
+            "road": (screen_width * 0.3, screen_height * 0.9),
             "road_straight": (screen_width * 0.3, screen_height * 0.9),
+            "power_line": (screen_width * 0.35, screen_height * 0.9),
             "power": (screen_width * 0.35, screen_height * 0.9),
-            "water": (screen_width * 0.4, screen_height * 0.9)
+            "water_pipe": (screen_width * 0.4, screen_height * 0.9),
+            "water": (screen_width * 0.4, screen_height * 0.9),
+            "park": (screen_width * 0.45, screen_height * 0.9),
+            "service_building": (screen_width * 0.5, screen_height * 0.9),
+            "delete_infrastructure": (screen_width * 0.55, screen_height * 0.9)
         }
         
         if infra_type in positions:
-            pyautogui.click(positions[infra_type][0], positions[infra_type][1])
+            self._safe_click(positions[infra_type][0], positions[infra_type][1])
             return True
         else:
             self.logger.warning(f"Unknown infrastructure type: {infra_type}")
             return False
+    
+    def _handle_budget_action(self, budget_action: str) -> bool:
+        """
+        Handle budget-related actions.
+        
+        Args:
+            budget_action: The budget action to perform
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        # First, open the budget panel
+        self._open_budget_panel()
+        time.sleep(0.5)
+        
+        # Get screen dimensions for positioning
+        screen_width = self.screen_region[2]
+        screen_height = self.screen_region[3]
+        
+        # Define positions for different budget actions
+        # These are approximate and would need to be adjusted for actual game UI
+        action_positions = {
+            # Tax rates
+            "increase_residential_tax": (screen_width * 0.6, screen_height * 0.3),
+            "decrease_residential_tax": (screen_width * 0.4, screen_height * 0.3),
+            "increase_commercial_tax": (screen_width * 0.6, screen_height * 0.4),
+            "decrease_commercial_tax": (screen_width * 0.4, screen_height * 0.4),
+            "increase_industrial_tax": (screen_width * 0.6, screen_height * 0.5),
+            "decrease_industrial_tax": (screen_width * 0.4, screen_height * 0.5),
+            
+            # Service budgets
+            "increase_service_budget": (screen_width * 0.6, screen_height * 0.6),
+            "decrease_service_budget": (screen_width * 0.4, screen_height * 0.6)
+        }
+        
+        # Click on the appropriate button if it exists
+        if budget_action in action_positions:
+            pos_x, pos_y = action_positions[budget_action]
+            self._safe_click(pos_x, pos_y)
+            time.sleep(0.3)
+            
+            # Close the budget panel
+            self._close_budget_panel()
+            return True
+        else:
+            self.logger.warning(f"Unknown budget action: {budget_action}")
+            # Close the budget panel even if action failed
+            self._close_budget_panel()
+            return False
+    
+    def _open_budget_panel(self):
+        """Open the budget panel in the game."""
+        # This might be a button in the UI, a keyboard shortcut, etc.
+        # For simplicity, let's assume it's a button in the bottom-right corner
+        screen_width = self.screen_region[2]
+        screen_height = self.screen_region[3]
+        
+        # Click on the budget button (approximate position)
+        budget_button_x = screen_width * 0.9
+        budget_button_y = screen_height * 0.9
+        self._safe_click(budget_button_x, budget_button_y)
+    
+    def _close_budget_panel(self):
+        """Close the budget panel."""
+        # This might be a close button, ESC key, etc.
+        # For simplicity, press ESC
+        pyautogui.press('escape')
+        # Reduced wait time
+        time.sleep(0.1)
     
     def _click_speed_button(self, speed: int) -> bool:
         """Click on a speed button."""
@@ -814,4 +944,242 @@ class AutoVisionInterface(BaseInterface):
             
         except Exception as e:
             self.logger.error(f"Error during interface reset: {str(e)}")
-            return False 
+            return False
+    
+    def click_at_coordinates(self, x, y):
+        """
+        Click at the specified screen coordinates safely.
+        
+        Args:
+            x: X coordinate
+            y: Y coordinate
+        """
+        self._safe_click(x, y)
+    
+    def press_key(self, key):
+        """
+        Presses a keyboard key.
+        
+        Args:
+            key: Key to press
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Disallow ESC and Function keys for safety
+            if key in ['esc', 'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9', 'f10', 'f11', 'f12']:
+                self.logger.warning(f"Blocked pressing of restricted key: {key}")
+                return False
+                
+            pyautogui.press(key)
+            self.logger.debug(f"Pressed key: {key}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to press key {key}: {e}")
+            return False
+            
+    def press_hotkey(self, modifier, key):
+        """
+        Presses a hotkey combination (modifier + key).
+        
+        Args:
+            modifier: Modifier key ('ctrl', 'shift', 'alt')
+            key: Regular key
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Block dangerous combinations
+            if modifier == 'alt' and key == 'f4':
+                self.logger.warning("Blocked pressing of restricted hotkey: alt+f4")
+                return False
+                
+            pyautogui.hotkey(modifier, key)
+            self.logger.debug(f"Pressed hotkey: {modifier}+{key}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to press hotkey {modifier}+{key}: {e}")
+            return False
+            
+    def rotate_camera_left(self):
+        """
+        Rotates the camera view counterclockwise.
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Most city builders use Q for counterclockwise rotation
+            pyautogui.press('q')
+            self.logger.debug("Rotated camera left")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to rotate camera left: {e}")
+            return False
+            
+    def rotate_camera_right(self):
+        """
+        Rotates the camera view clockwise.
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Most city builders use E for clockwise rotation
+            pyautogui.press('e')
+            self.logger.debug("Rotated camera right")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to rotate camera right: {e}")
+            return False
+            
+    def reset_camera_rotation(self):
+        """
+        Resets the camera rotation to the default north-facing orientation.
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Press backspace which resets camera in CS2
+            pyautogui.press('backspace')
+            self.logger.debug("Reset camera rotation")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to reset camera rotation: {e}")
+            return False
+            
+    def tilt_camera_up(self):
+        """
+        Tilts the camera view upward (more top-down view).
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Home key often tilts up in city builders
+            pyautogui.press('home')
+            self.logger.debug("Tilted camera up")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to tilt camera up: {e}")
+            return False
+            
+    def tilt_camera_down(self):
+        """
+        Tilts the camera view downward (more horizontal view).
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # End key often tilts down in city builders
+            pyautogui.press('end')
+            self.logger.debug("Tilted camera down")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to tilt camera down: {e}")
+            return False
+            
+    def zoom_with_wheel(self, clicks):
+        """
+        Zooms in or out using the mouse wheel.
+        
+        Args:
+            clicks: Number of wheel clicks (positive = zoom in, negative = zoom out)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            pyautogui.scroll(clicks)
+            direction = "in" if clicks > 0 else "out"
+            self.logger.debug(f"Zoomed {direction} using mouse wheel")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to zoom with mouse wheel: {e}")
+            return False
+    
+    def drag_mouse(self, start_x, start_y, end_x, end_y, duration=0.2):
+        """
+        Drag the mouse from one position to another (pan the view).
+        
+        Args:
+            start_x, start_y: Starting coordinates
+            end_x, end_y: Ending coordinates
+            duration: How long the drag should take
+        """
+        # Ensure coordinates are within safe bounds
+        screen_width = self.screen_region[2]
+        screen_height = self.screen_region[3]
+        safety_margin = 5
+        
+        start_x = max(safety_margin, min(start_x, screen_width - safety_margin))
+        start_y = max(safety_margin, min(start_y, screen_height - safety_margin))
+        end_x = max(safety_margin, min(end_x, screen_width - safety_margin))
+        end_y = max(safety_margin, min(end_y, screen_height - safety_margin))
+        
+        # Perform the drag
+        pyautogui.moveTo(start_x, start_y)
+        pyautogui.dragTo(end_x, end_y, duration=duration)
+        
+        # Reduced wait time after drag
+        time.sleep(0.1)
+    
+    def pan_view(self, direction, distance=100):
+        """
+        Pan the view in the specified direction.
+        
+        Args:
+            direction: 'left', 'right', 'up', or 'down'
+            distance: How far to pan in pixels
+        """
+        # Get screen center
+        screen_width = self.screen_region[2]
+        screen_height = self.screen_region[3]
+        center_x = screen_width // 2
+        center_y = screen_height // 2
+        
+        # Calculate start and end coordinates based on direction
+        start_x, start_y = center_x, center_y
+        end_x, end_y = center_x, center_y
+        
+        if direction == 'left':
+            end_x = center_x + distance  # Dragging right moves view left
+        elif direction == 'right':
+            end_x = center_x - distance  # Dragging left moves view right
+        elif direction == 'up':
+            end_y = center_y + distance  # Dragging down moves view up
+        elif direction == 'down':
+            end_y = center_y - distance  # Dragging up moves view down
+        else:
+            self.logger.warning(f"Unknown pan direction: {direction}")
+            return
+        
+        # Perform the drag
+        self.drag_mouse(start_x, start_y, end_x, end_y)
+    
+    def middle_click(self, x=None, y=None):
+        """
+        Middle-click at the specified coordinates or at the current mouse position.
+        Some games use this for camera control.
+        
+        Args:
+            x, y: Optional coordinates to middle-click at
+        """
+        if x is not None and y is not None:
+            # Move to the specified coordinates first
+            screen_width = self.screen_region[2]
+            screen_height = self.screen_region[3]
+            safety_margin = 5
+            
+            safe_x = max(safety_margin, min(x, screen_width - safety_margin))
+            safe_y = max(safety_margin, min(y, screen_height - safety_margin))
+            
+            pyautogui.moveTo(safe_x, safe_y)
+        
+        # Perform middle click
+        pyautogui.middleClick()
+        time.sleep(0.1) 
