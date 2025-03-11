@@ -478,28 +478,60 @@ class AutoVisionInterface(BaseInterface):
         
         return metrics
     
-    def get_metrics(self) -> Dict[str, float]:
+    def get_metrics(self):
         """
-        Get current game metrics (population, happiness, etc.)
+        Get current game metrics from the UI.
         
         Returns:
-            Dictionary containing game metrics
+            Dictionary of metrics (population, happiness, budget, traffic)
         """
-        if not self.connected:
-            self.logger.warning("Not connected to the game.")
-            return {}
-        
-        # Ensure we have a fresh screenshot
-        if self.last_screenshot is None:
-            self.last_screenshot = np.array(self.sct.grab(self.monitor))
-        
-        # Extract metrics from the screenshot
-        metrics = self.extract_metrics_from_regions()
-        
-        # Store the metrics for later comparison
-        self.last_metrics = metrics
-        
-        return metrics
+        # Take a screenshot and extract metrics
+        try:
+            # Modified to be more robust in the absence of templates
+            # This reduces the dependency on perfect template matching
+            metrics = {}
+            if self.is_connected:
+                screenshot = self.capture_screen()
+                
+                # Try to get values using templates, but don't fail if templates aren't found
+                try:
+                    population = self._read_metric_value(screenshot, "population") 
+                    metrics["population"] = population if population is not None else 0
+                except Exception as e:
+                    self.logger.debug(f"Failed to read population: {str(e)}")
+                    metrics["population"] = 0
+                    
+                try:
+                    happiness = self._read_metric_value(screenshot, "happiness")
+                    metrics["happiness"] = happiness if happiness is not None else 50  # Default to neutral happiness
+                except Exception as e:
+                    self.logger.debug(f"Failed to read happiness: {str(e)}")
+                    metrics["happiness"] = 50
+                    
+                try:
+                    budget = self._read_metric_value(screenshot, "budget")
+                    metrics["budget_balance"] = budget if budget is not None else 10000  # Default starting budget
+                except Exception as e:
+                    self.logger.debug(f"Failed to read budget: {str(e)}")
+                    metrics["budget_balance"] = 10000
+                    
+                try:
+                    traffic = self._read_metric_value(screenshot, "traffic")
+                    metrics["traffic"] = traffic if traffic is not None else 0
+                except Exception as e:
+                    self.logger.debug(f"Failed to read traffic: {str(e)}")
+                    metrics["traffic"] = 0
+                    
+            return metrics
+        except Exception as e:
+            self.logger.warning(f"Failed to get metrics: {str(e)}")
+            # Return default values when metrics cannot be read
+            return {
+                "population": 0,
+                "happiness": 50,
+                "budget_balance": 10000,
+                "traffic": 0
+            }
     
     def perform_action(self, action: Dict[str, Any]) -> bool:
         """
@@ -859,7 +891,7 @@ class AutoVisionInterface(BaseInterface):
         # Check for bankruptcy - this is a simple implementation that assumes
         # bankruptcy is indicated by a negative budget value
         metrics = self.get_metrics()
-        if metrics.get("budget", 0) < 0:
+        if metrics.get("budget_balance", 0) < 0:
             return True
         
         # TODO: Add OCR-based detection of game over dialogs

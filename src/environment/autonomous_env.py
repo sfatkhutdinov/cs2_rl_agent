@@ -100,14 +100,35 @@ class AutonomousCS2Environment(gym.Wrapper):
                 action_fn=lambda: self._repeat_last_action(),
                 action_type=ActionType.GAME_ACTION
             ),
+            # Enhanced camera controls for better exploration
             Action(
-                name="zoom_in",
+                name="zoom_in_small",
+                action_fn=lambda: self.env.interface.zoom_with_wheel(3),
+                action_type=ActionType.CAMERA_CONTROL
+            ),
+            Action(
+                name="zoom_in_medium",
                 action_fn=lambda: self.env.interface.zoom_with_wheel(5),
                 action_type=ActionType.CAMERA_CONTROL
             ),
             Action(
-                name="zoom_out",
+                name="zoom_in_large",
+                action_fn=lambda: self.env.interface.zoom_with_wheel(10),
+                action_type=ActionType.CAMERA_CONTROL
+            ),
+            Action(
+                name="zoom_out_small",
+                action_fn=lambda: self.env.interface.zoom_with_wheel(-3),
+                action_type=ActionType.CAMERA_CONTROL
+            ),
+            Action(
+                name="zoom_out_medium",
                 action_fn=lambda: self.env.interface.zoom_with_wheel(-5),
+                action_type=ActionType.CAMERA_CONTROL
+            ),
+            Action(
+                name="zoom_out_large",
+                action_fn=lambda: self.env.interface.zoom_with_wheel(-10),
                 action_type=ActionType.CAMERA_CONTROL
             ),
             Action(
@@ -142,6 +163,16 @@ class AutonomousCS2Environment(gym.Wrapper):
             Action(
                 name="rotate_camera_right",
                 action_fn=lambda: self.env.interface.rotate_camera_right(),
+                action_type=ActionType.CAMERA_CONTROL
+            ),
+            Action(
+                name="rotate_camera_left_middle_click",
+                action_fn=lambda: self._rotate_with_middle_click("left"),
+                action_type=ActionType.CAMERA_CONTROL
+            ),
+            Action(
+                name="rotate_camera_right_middle_click",
+                action_fn=lambda: self._rotate_with_middle_click("right"),
                 action_type=ActionType.CAMERA_CONTROL
             ),
             Action(
@@ -379,19 +410,20 @@ class AutonomousCS2Environment(gym.Wrapper):
     
     def _get_guided_exploratory_action(self):
         """Get a guided exploratory action that strategically explores the environment"""
-        # 5% chance for completely random action to maintain some variety
-        if np.random.random() < 0.05:
+        # 10% chance for completely random action to maintain some variety (increased from 5%)
+        if np.random.random() < 0.1:
             return np.random.randint(0, self.action_space.n)
             
         # Use different exploration strategies based on probabilities
+        # Increase camera control and keyboard testing probabilities
         exploration_strategy = np.random.choice([
-            'camera_control',  # Move around the map
-            'ui_exploration',  # Interact with UI elements
-            'game_actions',    # Try game mechanics
-            'keyboard_testing' # Try keyboard shortcuts
-        ], p=[0.3, 0.3, 0.3, 0.1])
+            'camera_control',   # Move around the map
+            'ui_exploration',   # Interact with UI elements
+            'game_actions',     # Try game mechanics
+            'keyboard_testing'  # Try keyboard shortcuts
+        ], p=[0.4, 0.2, 0.2, 0.2])  # Changed from [0.3, 0.3, 0.3, 0.1]
         
-        # Get current metrics to guide actions
+        # Get current metrics to guide actions, but don't rely heavily on them
         metrics = {}
         population = 0
         try:
@@ -405,6 +437,7 @@ class AutonomousCS2Environment(gym.Wrapper):
                     population = 0
         except Exception as e:
             self.logger.debug(f"Error getting metrics in guided exploration: {str(e)}")
+            # Continue without metrics - we don't want to be overly dependent on them
         
         if exploration_strategy == 'camera_control':
             # Prioritize uncovered map areas if we're tracking exploration
@@ -564,12 +597,17 @@ class AutonomousCS2Environment(gym.Wrapper):
             # Update info based on action type
             if action_type == ActionType.CAMERA_CONTROL:
                 info["camera_action"] = action_name
-                reward = 0.01  # Small reward for camera control
+                reward = 0.03  # Increased reward for camera control (was 0.01)
             elif action_type == ActionType.UI_INTERACTION:
                 info["ui_action"] = action_name
-                # Menu exploration already gives rewards in the function
+                reward = 0.02  # Small base reward for UI interaction
+                # Menu exploration already gives additional rewards in the function
             elif action_type == ActionType.KEYBOARD:
                 info["keyboard_action"] = action_name
+                reward = 0.02  # Added reward for keyboard actions
+            elif action_type == ActionType.GAME_ACTION:
+                info["game_action"] = action_name
+                reward = 0.02  # Base reward for attempting game actions
             
             # Special actions that need additional handling
             if action_name == "explore_menu" and success:
@@ -583,8 +621,8 @@ class AutonomousCS2Environment(gym.Wrapper):
                                 # Add to discovery buffer if it's a new element
                                 self._update_discovery_buffer(exploration_result)
                                 
-                                # Small positive reward for discovering new elements
-                                reward = 0.05
+                                # Increased positive reward for discovering new elements
+                                reward = 0.1  # Was 0.05
                                 
                                 element_name = exploration_result.get("menu_name", 
                                                               exploration_result.get("element_name", "unknown"))
@@ -594,8 +632,8 @@ class AutonomousCS2Environment(gym.Wrapper):
                         self.logger.warning(f"Menu exploration error: {str(explore_error)}")
                         info["menu_error"] = str(explore_error)
             
-            # Wait a short time to let the game react
-            time.sleep(0.05)
+            # Wait a short time to let the game react - reduced slightly to increase exploration speed
+            time.sleep(0.025)  # Was 0.05
             
             # Get new observation after action
             try:
@@ -871,4 +909,43 @@ class AutonomousCS2Environment(gym.Wrapper):
                 return False
         else:
             self.logger.warning("No last action to repeat")
+            return False
+    
+    # Helper method for middle-click camera rotation
+    def _rotate_with_middle_click(self, direction):
+        """
+        Rotate camera by holding middle mouse button and moving in specified direction.
+        More natural camera control than using keyboard.
+        
+        Args:
+            direction: Which direction to rotate ("left" or "right")
+            
+        Returns:
+            True if action was successful
+        """
+        try:
+            # Get screen center
+            screen_width, screen_height = pyautogui.size()
+            center_x, center_y = screen_width // 2, screen_height // 2
+            
+            # Calculate drag distance based on direction
+            drag_distance = 100
+            if direction == "left":
+                end_x = center_x - drag_distance
+                end_y = center_y
+            elif direction == "right":
+                end_x = center_x + drag_distance
+                end_y = center_y
+            else:
+                return False
+                
+            # Middle click and hold, then drag
+            pyautogui.moveTo(center_x, center_y)
+            pyautogui.mouseDown(button='middle')
+            pyautogui.moveTo(end_x, end_y, duration=0.2)
+            pyautogui.mouseUp(button='middle')
+            
+            return True
+        except Exception as e:
+            self.logger.warning(f"Failed to rotate with middle click: {str(e)}")
             return False 
