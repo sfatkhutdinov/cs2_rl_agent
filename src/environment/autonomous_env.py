@@ -346,24 +346,36 @@ class AutonomousCS2Environment(gym.Wrapper):
             action: The action taken
             reward: The reward received
         """
-        if not hasattr(self, 'action_success_rates'):
-            # Initialize success rates for all actions
-            self.action_success_rates = {
-                i: {'count': 0, 'success': 0, 'avg_reward': 0}
-                for i in range(self.action_space.n)
-            }
-        
-        # Update the count for this action
-        self.action_success_rates[action]['count'] += 1
-        
-        # Update success (positive reward = success)
-        if reward > 0:
-            self.action_success_rates[action]['success'] += 1
+        try:
+            # Validate action before proceeding
+            if not isinstance(action, (int, np.integer)) or action < 0 or action >= self.action_space.n:
+                self.logger.warning(f"Invalid action index in _update_action_success_rates: {action}")
+                return
+                
+            if not hasattr(self, 'action_success_rates'):
+                # Initialize success rates for all actions
+                self.action_success_rates = {
+                    i: {'count': 0, 'success': 0, 'success_rate': 0.0, 'avg_reward': 0.0}
+                    for i in range(self.action_space.n)
+                }
             
-        # Update average reward using running average
-        count = self.action_success_rates[action]['count']
-        old_avg = self.action_success_rates[action]['avg_reward']
-        self.action_success_rates[action]['avg_reward'] = old_avg + (reward - old_avg) / count
+            # Update the count for this action
+            self.action_success_rates[action]['count'] += 1
+            
+            # Update success (positive reward = success)
+            if reward > 0:
+                self.action_success_rates[action]['success'] += 1
+                
+            # Update success rate
+            count = self.action_success_rates[action]['count']
+            success = self.action_success_rates[action]['success']
+            self.action_success_rates[action]['success_rate'] = success / max(1, count)  # Avoid division by zero
+                
+            # Update average reward using running average
+            old_avg = self.action_success_rates[action]['avg_reward']
+            self.action_success_rates[action]['avg_reward'] = old_avg + (reward - old_avg) / count
+        except Exception as e:
+            self.logger.warning(f"Error updating action success rates: {str(e)}")
     
     def _get_guided_exploratory_action(self):
         """Get a guided exploratory action that strategically explores the environment"""
@@ -380,8 +392,19 @@ class AutonomousCS2Environment(gym.Wrapper):
         ], p=[0.3, 0.3, 0.3, 0.1])
         
         # Get current metrics to guide actions
-        metrics = self.env.get_observation().get('metrics', {})
-        population = metrics.get('population', 0)
+        metrics = {}
+        population = 0
+        try:
+            observation = self.env.get_observation()
+            if observation is not None:
+                metrics = observation.get('metrics', {}) or {}
+                if metrics is None:
+                    metrics = {}
+                population = metrics.get('population', 0)
+                if population is None:
+                    population = 0
+        except Exception as e:
+            self.logger.debug(f"Error getting metrics in guided exploration: {str(e)}")
         
         if exploration_strategy == 'camera_control':
             # Prioritize uncovered map areas if we're tracking exploration
@@ -424,8 +447,69 @@ class AutonomousCS2Environment(gym.Wrapper):
             else:
                 return np.random.choice(keyboard_actions) if keyboard_actions else np.random.randint(0, self.action_space.n)
                 
-        # ... existing code for other strategies ...
-
+        elif exploration_strategy == 'ui_exploration':
+            # Try UI interaction actions
+            try:
+                ui_actions = [i for i, a in enumerate(self.action_handlers) 
+                            if a.action_type == ActionType.UI_INTERACTION]
+                
+                # If we have a menu explorer, use it
+                if hasattr(self, 'menu_explorer') and self.menu_explorer is not None:
+                    # Small chance for random UI action
+                    if np.random.random() < 0.2 and ui_actions:
+                        return np.random.choice(ui_actions)
+                    
+                    # Otherwise, use a more directed approach
+                    explore_menu_actions = [i for i, a in enumerate(self.action_handlers) 
+                                         if a.name == "explore_menu"]
+                    
+                    if explore_menu_actions:
+                        return explore_menu_actions[0]  # Use the explore_menu action
+                    else:
+                        return np.random.choice(ui_actions) if ui_actions else np.random.randint(0, self.action_space.n)
+                else:
+                    return np.random.choice(ui_actions) if ui_actions else np.random.randint(0, self.action_space.n)
+            except Exception as e:
+                self.logger.debug(f"Error in UI exploration strategy: {str(e)}")
+                return np.random.randint(0, self.action_space.n)
+                
+        elif exploration_strategy == 'game_actions':
+            # Try game actions (zoning, infrastructure, etc.)
+            try:
+                game_actions = [i for i, a in enumerate(self.action_handlers) 
+                              if a.action_type == ActionType.GAME_ACTION]
+                
+                # If we have available game actions
+                if game_actions:
+                    # Filter to the most successful actions based on our history
+                    if hasattr(self, 'action_success_rates') and self.action_success_rates:
+                        try:
+                            # Filter to game actions that have been tried
+                            success_rates = [(i, self.action_success_rates.get(i, {'success_rate': 0.1, 'avg_reward': 0.0})) 
+                                           for i in game_actions if i in self.action_success_rates]
+                            
+                            if success_rates:
+                                # Sort by success rate * avg_reward
+                                sorted_actions = sorted(success_rates, 
+                                                     key=lambda x: x[1]['success_rate'] * max(0.1, x[1]['avg_reward']), 
+                                                     reverse=True)
+                                
+                                # Take the top 30% of actions
+                                top_actions = [a[0] for a in sorted_actions[:max(1, len(sorted_actions) // 3)]]
+                                return np.random.choice(top_actions)
+                        except Exception as rate_error:
+                            self.logger.debug(f"Error filtering by success rates: {str(rate_error)}")
+                            # Fall back to random game action
+                    
+                    # Default: random game action
+                    return np.random.choice(game_actions)
+                else:
+                    # No game actions available, fall back to random
+                    return np.random.randint(0, self.action_space.n)
+            except Exception as e:
+                self.logger.debug(f"Error in game actions strategy: {str(e)}")
+                return np.random.randint(0, self.action_space.n)
+        
         # Default: return a random action if no strategy matched
         return np.random.randint(0, self.action_space.n)
     
