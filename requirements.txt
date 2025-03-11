@@ -4,11 +4,13 @@ tensorflow>=2.8.0
 gymnasium>=0.26.0
 stable-baselines3>=1.5.0
 optuna>=2.10.0
+gym>=0.21.0
 
-# Computer Vision (for fallback interface)
+# Computer Vision (for autonomous interface)
 opencv-python>=4.5.0
 pytesseract>=0.3.0
 pillow>=8.0.0
+tesseract-ocr>=4.0.0  # System package - install separately with apt/brew
 
 # Data processing and visualization
 numpy>=1.20.0
@@ -23,7 +25,9 @@ tqdm>=4.62.0
 ray>=1.0.0
 pytest>=6.0.0
 jupyter>=1.0.0
+pywin32>=300.0; platform_system=="Windows"  # For Windows-specific functionality
 
 # Game interaction
 pyautogui>=0.9.0
-mss>=6.0.0  # For screen capture 
+mss>=6.0.0  # For screen capture
+keyboard>=0.13.0  # For keyboard control 
