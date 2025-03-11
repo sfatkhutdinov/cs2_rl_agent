@@ -51,14 +51,14 @@ def make_env(rank, config, seed=0):
         interface_type = config.get("interface", {}).get("type", "auto_vision")
         if interface_type == "auto_vision":
             # Use the automatic vision interface
-            interface = AutoVisionInterface(
-                use_ocr=config.get("interface", {}).get("use_ocr", True),
-                use_templates=config.get("interface", {}).get("use_templates", True),
-                cache_detections=config.get("interface", {}).get("cache_detections", True),
-                ocr_confidence=config.get("interface", {}).get("ocr_confidence", 0.6),
-                template_threshold=config.get("interface", {}).get("template_threshold", 0.7),
-                logger=logger
-            )
+            interface_config = {
+                "detection_method": config.get("interface", {}).get("detection_method", "ocr"),
+                "ocr_confidence": config.get("interface", {}).get("ocr_confidence", 0.6),
+                "template_threshold": config.get("interface", {}).get("template_threshold", 0.7),
+                "cache_detections": config.get("interface", {}).get("cache_detections", True),
+            }
+            interface = AutoVisionInterface(config=interface_config)
+            interface.logger = logger  # Set logger after initialization
         else:
             raise ValueError(f"Unknown interface type: {interface_type}")
             
