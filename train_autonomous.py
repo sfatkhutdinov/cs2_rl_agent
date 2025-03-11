@@ -260,7 +260,6 @@ def train(config_path):
         sde_sample_freq=config.get("agent", {}).get("sde_sample_freq", -1),
         target_kl=config.get("agent", {}).get("target_kl", None),
         tensorboard_log=tb_log_dir,
-        create_eval_env=False,
         policy_kwargs=policy_kwargs,
         verbose=1,
         seed=seed
