@@ -1,0 +1,120 @@
+# Autonomous Agent Configuration for Cities: Skylines 2
+# This configuration maximizes exploration and learning without human guidance
+
+experiment_name: "fully_autonomous_cs2_agent"
+seed: 42  # Random seed for reproducibility
+
+# Interface settings
+interface:
+  type: "auto_vision"  # Use the automatic vision interface
+  use_ocr: true        # Enable OCR for text detection
+  use_templates: true  # Enable template matching for UI elements
+  cache_detections: true  # Cache detected UI elements for faster access
+  ocr_confidence: 0.5  # Lower threshold to detect more potential UI elements
+  template_threshold: 0.6  # Lower threshold for more detection possibilities
+
+# Environment settings
+environment:
+  observation_space: "combined"  # Use both visual and metric observations
+  action_space: "advanced"       # Use the advanced action space with more possible actions
+  reward_function: "balanced"    # Use a balanced reward function considering multiple metrics
+  max_episode_steps: 2000        # Allow longer episodes for proper exploration
+  metrics_update_freq: 10        # Update metrics frequently
+  pause_on_menu: false           # Don't pause game during menu navigation to allow learning
+  
+  # Additional metrics to observe
+  metrics:
+    - "population"
+    - "happiness"
+    - "unemployment"
+    - "education"
+    - "health"
+    - "pollution"
+    - "traffic"
+    - "budget_balance"
+    - "tax_income"
+    - "land_value"
+
+# Exploration settings
+exploration:
+  frequency: 0.4                  # Higher exploration frequency (40% of actions)
+  random_action_frequency: 0.3    # Higher random action frequency (30% of exploration actions)
+  menu_buffer_size: 100           # Store more discovered menu items
+  intrinsic_reward_coef: 0.2      # Coefficient for intrinsic reward (curiosity-driven exploration)
+  discovery_bonus: 0.1            # Reward bonus for discovering new UI elements
+  
+  # Visual exploration regions to prioritize
+  priority_regions:
+    - "top_menu"
+    - "left_sidebar"
+    - "bottom_bar"
+    - "dialogs"
+
+# Agent settings (PPO algorithm)
+agent:
+  policy_type: "MlpLstmPolicy"    # Use LSTM for sequential decision making
+  learning_rate: 0.0003
+  n_steps: 2048                   # Steps per update
+  batch_size: 64
+  n_epochs: 10
+  gamma: 0.99                     # Discount factor
+  gae_lambda: 0.95                # GAE lambda parameter
+  clip_range: 0.2
+  normalize_advantage: true
+  ent_coef: 0.02                  # Higher entropy coefficient for more exploration
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  use_sde: true                   # Use state-dependent exploration
+  sde_sample_freq: 4
+  
+  # Policy network architecture (using LSTM for temporal memory)
+  policy_kwargs:
+    net_arch:
+      - {"pi": [128, 128], "vf": [128, 128]}  # Shared network
+      - {"lstm": 128}                          # LSTM layer
+      - {"pi": [64], "vf": [64]}              # Policy and value heads
+
+# Training settings
+training:
+  total_timesteps: 10000000       # Train for 10 million steps
+  n_envs: 1                       # Only use 1 environment (game instance)
+  checkpoint_freq: 50000          # Save checkpoint every 50k steps
+  evaluate_during_training: true
+  eval_freq: 100000               # Evaluate every 100k steps
+  eval_episodes: 3                # Number of episodes for evaluation
+  
+  # Progress tracking
+  log_interval: 10
+  verbose: 1
+
+# Paths for saving data
+paths:
+  log_dir: "logs/autonomous"
+  model_dir: "models/autonomous"
+  tensorboard_dir: "tensorboard/autonomous"
+  data_dir: "data/autonomous"
+
+# Curriculum learning (gradually increasing difficulty)
+curriculum:
+  enabled: true
+  levels:
+    - name: "initial_exploration"
+      steps: 1000000
+      exploration_frequency: 0.6
+      reward_weights:
+        discovery: 0.6
+        city_metrics: 0.4
+    
+    - name: "balanced_learning"
+      steps: 3000000
+      exploration_frequency: 0.4
+      reward_weights:
+        discovery: 0.4
+        city_metrics: 0.6
+    
+    - name: "focused_optimization"
+      steps: 6000000
+      exploration_frequency: 0.2
+      reward_weights:
+        discovery: 0.1
+        city_metrics: 0.9 
