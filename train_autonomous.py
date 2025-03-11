@@ -358,27 +358,52 @@ def train(config_path):
     agent_config = config.get("agent", {})
     policy_kwargs = {}
     
-    # Start with some sensible defaults
+    # Start with some sensible defaults optimized for high-end hardware
     policy_kwargs = {
         "net_arch": {
-            "pi": [64, 32],  # Smaller policy network
-            "vf": [64, 32]   # Smaller value network
+            "pi": [256, 128, 64],  # Deeper policy network for better performance
+            "vf": [256, 128, 64]   # Deeper value network
         },
         "activation_fn": torch.nn.ReLU,
-        "ortho_init": True,  # Use orthogonal initialization for stability
+        "ortho_init": True,        # Use orthogonal initialization for stability
         "normalize_images": True,  # Normalize image inputs for faster convergence
         "optimizer_class": torch.optim.Adam,
         "optimizer_kwargs": {
-            "eps": 1e-5,  # Prevent division by zero
+            "eps": 1e-5,           # Prevent division by zero
+            "weight_decay": 1e-5,  # Slight regularization
+        },
+        # Enhanced feature extraction for RTX GPU
+        "features_extractor_class": None,  # Will use default but with custom kwargs
+        "features_extractor_kwargs": {
+            "features_dim": 256,    # Larger feature dimension for better representations
         }
     }
+    
+    # Set CUDA optimizations for better performance
+    if torch.cuda.is_available():
+        logger.info("CUDA available. Setting up GPU optimizations...")
+        # Set to benchmark mode for optimized performance on fixed input sizes
+        torch.backends.cudnn.benchmark = True
+        # Increase memory allocation efficiency
+        torch.cuda.empty_cache()
+        # Log GPU information
+        gpu_name = torch.cuda.get_device_name(0)
+        gpu_mem = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+        logger.info(f"Using GPU: {gpu_name} with {gpu_mem:.2f} GB memory")
     
     # Override with user config if provided
     if "policy_kwargs" in agent_config:
         user_policy_kwargs = agent_config["policy_kwargs"]
         # Carefully merge, prioritizing user settings where provided
+        
+        # Handle nested dictionaries like net_arch
         if "net_arch" in user_policy_kwargs:
             policy_kwargs["net_arch"] = user_policy_kwargs["net_arch"]
+        
+        # Handle features extractor kwargs, merging rather than replacing
+        if "features_extractor_kwargs" in user_policy_kwargs:
+            for k, v in user_policy_kwargs["features_extractor_kwargs"].items():
+                policy_kwargs["features_extractor_kwargs"][k] = v
         
         # Handle activation function - convert from string to actual function if needed
         if "activation_fn" in user_policy_kwargs:
@@ -390,7 +415,9 @@ def train(config_path):
                     "tanh": torch.nn.Tanh,
                     "sigmoid": torch.nn.Sigmoid,
                     "leaky_relu": torch.nn.LeakyReLU,
-                    "elu": torch.nn.ELU
+                    "elu": torch.nn.ELU,
+                    "gelu": torch.nn.GELU,  # Better performance on some tasks
+                    "silu": torch.nn.SiLU,  # Also known as Swish, often better than ReLU
                 }
                 if activation_str.lower() in activation_map:
                     policy_kwargs["activation_fn"] = activation_map[activation_str.lower()]
@@ -400,13 +427,13 @@ def train(config_path):
                 policy_kwargs["activation_fn"] = user_policy_kwargs["activation_fn"]
         
         # Copy other kwargs
-        for key in ["ortho_init", "normalize_images"]:
+        for key in ["ortho_init", "normalize_images", "features_extractor_class"]:
             if key in user_policy_kwargs:
                 policy_kwargs[key] = user_policy_kwargs[key]
         
         # Handle optimizer_kwargs separately to ensure numeric values are properly parsed
         if "optimizer_kwargs" in user_policy_kwargs:
-            optimizer_kwargs = {}
+            optimizer_kwargs = policy_kwargs.get("optimizer_kwargs", {}).copy()
             for k, v in user_policy_kwargs["optimizer_kwargs"].items():
                 # Convert numeric string values to appropriate types
                 if isinstance(v, str):

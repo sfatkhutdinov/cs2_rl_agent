@@ -1,5 +1,6 @@
 # Autonomous Agent Configuration for Cities: Skylines 2 RL
-experiment_name: "fully_autonomous_cs2_agent"
+# Optimized for high-end hardware: RTX 3080 Ti (16GB VRAM), i9-12900HK, 64GB RAM
+experiment_name: "fully_autonomous_cs2_agent_highend"
 seed: 42
 
 # Environment configuration
@@ -7,21 +8,21 @@ environment:
   # Interface config
   interface:
     type: "auto_vision"
-    screen_region: [0, 0, 1920, 1080]  # Default full HD resolution
+    screen_region: [0, 0, 1920, 1080]  # Full HD resolution
     templates_dir: "templates"
     ocr_enabled: true
   
-  # Observation space configuration
+  # Observation space configuration - enhanced for better visual processing
   observation_space:
     type: "combined"
     include_visual: true
     include_metrics: true
-    image_size: [84, 84]
-    grayscale: true
+    image_size: [128, 128]  # Increased from 84x84 to capture more details
+    grayscale: false  # Use color for better feature detection
     normalize_metrics: true
     metrics: ["population", "happiness", "budget_balance", "traffic"]
     
-  # Reward function configuration
+  # Reward function configuration - more nuanced rewards
   reward_function:
     population_growth: 0.1
     happiness: 0.05
@@ -31,52 +32,57 @@ environment:
     pollution_penalty: 0.05
     
   # Environment parameters
-  max_episode_steps: 2000
-  metrics_update_freq: 10
+  max_episode_steps: 3000  # Longer episodes for better learning
+  metrics_update_freq: 5   # More frequent updates
   pause_on_menu: false
+  action_repeat: 1         # Can be increased for frame skipping
 
-# Agent configuration
+# Agent configuration - optimized for high-end hardware
 agent:
   policy_type: "MultiInputPolicy"  # Required for dictionary observation spaces
   policy_kwargs:
     net_arch:
-      pi: [64, 32]  # Policy network
-      vf: [64, 32]  # Value function network
+      pi: [256, 128, 64]   # Deeper and wider policy network
+      vf: [256, 128, 64]   # Deeper and wider value network
     activation_fn: "relu"  # Will be mapped to torch.nn.ReLU in code
     ortho_init: true
     normalize_images: true
+    features_extractor_kwargs:
+      features_dim: 256    # Larger feature dimension
     optimizer_kwargs:
-      eps: 1e-5  # to prevent division by zero
+      eps: 1e-5
+      weight_decay: 1e-5   # Slight regularization for better generalization
   
+  # Training hyperparameters optimized for faster learning
   learning_rate: 0.0003
-  n_steps: 1024
-  batch_size: 128
-  n_epochs: 8
+  n_steps: 2048            # Larger horizons for better credit assignment
+  batch_size: 512          # Larger batches to utilize GPU
+  n_epochs: 10             # More epochs per update
   gamma: 0.99
   gae_lambda: 0.95
-  ent_coef: 0.005
-  vf_coef: 0.75
+  ent_coef: 0.01           # Slightly higher exploration
+  vf_coef: 1.0             # Better value function estimation
   max_grad_norm: 0.5
-  target_kl: 0.015
+  target_kl: 0.02          # More optimization steps per update
   
 # Training configuration
 training:
-  n_envs: 1  # Must be 1 for single-game interaction
-  total_timesteps: 10000000
+  n_envs: 1                # Must be 1 for single-game interaction
+  total_timesteps: 20000000  # Double training steps for more learning
   checkpoint_freq: 50000
   evaluate_during_training: true
   eval_freq: 100000
-  eval_episodes: 2
+  eval_episodes: 3
   
 # Autonomous exploration config
 autonomous:
   exploration_frequency: 0.4
   random_action_frequency: 0.2
-  menu_exploration_buffer_size: 50
+  menu_exploration_buffer_size: 100  # Larger buffer to explore more menus
   
-# Memory monitoring config
+# Memory monitoring config - increased for high-end hardware
 memory_monitor:
   enabled: true
-  memory_limit_gb: 12
-  disk_limit_gb: 50
+  memory_limit_gb: 32      # Increased from 12GB to 32GB (half of 64GB)
+  disk_limit_gb: 200       # Increased disk usage allowance
   check_interval: 10000

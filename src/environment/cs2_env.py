@@ -160,62 +160,82 @@ class CS2Environment(gym.Env):
         time.sleep(0.2)  # Reduced from 0.5 to speed up learning
         
         # Get the new state
-        game_state = self.interface.get_game_state()
-        
-        # Extract the observation
-        observation = self._extract_observation(game_state)
-        
-        # Calculate reward
-        reward = self._calculate_reward(game_state)
-        self.total_reward += reward
-        
-        # Update metrics tracking for early termination
-        if not hasattr(self, 'recent_rewards'):
-            self.recent_rewards = []
-        
-        self.recent_rewards.append(reward)
-        if len(self.recent_rewards) > 20:  # Track last 20 rewards
-            self.recent_rewards = self.recent_rewards[-20:]
-        
-        # Check if the episode is done
-        self.episode_steps += 1
-        terminated = self.interface.is_game_over()
-        
-        # Early termination conditions for efficiency:
-        # 1. If there's a severe budget deficit that's been growing for several steps
-        # 2. If the agent is stuck with negative rewards for too long
-        if not terminated and self.episode_steps > 50:  # Don't terminate too early
-            # Check for bankruptcy or financial crisis
-            budget_balance = game_state.get("metrics", {}).get("budget_balance", 0)
+        try:
+            game_state = self.interface.get_game_state()
             
-            # Severe budget deficit that's likely unrecoverable
-            if budget_balance < -5000:
-                self.logger.info("Early termination due to severe budget deficit")
-                terminated = True
+            # Safety check - if game_state is None, try to recover
+            if game_state is None:
+                self.logger.warning("Received None game state, attempting recovery")
+                time.sleep(0.5)  # Wait a bit longer
+                game_state = self.interface.get_game_state()
+                
+                # If still None, create a minimal valid game state
+                if game_state is None:
+                    self.logger.error("Failed to recover game state, using fallback values")
+                    game_state = {
+                        "screen": np.zeros((84, 84, 3), dtype=np.uint8),
+                        "metrics": {
+                            "population": 0,
+                            "happiness": 0,
+                            "budget_balance": 0,
+                            "traffic": 0
+                        },
+                        "game_over": False
+                    }
             
-            # Check if agent is stuck with negative rewards
-            if len(self.recent_rewards) >= 20:
-                avg_recent_reward = sum(self.recent_rewards) / len(self.recent_rewards)
-                # If it's getting consistently negative rewards for a while, early terminate
-                if avg_recent_reward < -0.1 and all(r <= 0 for r in self.recent_rewards[-10:]):
-                    self.logger.info("Early termination due to consistent negative rewards")
-                    terminated = True
-        
-        truncated = self.episode_steps >= self.max_episode_steps
-        
-        # Store current state for rendering
-        self.current_state = game_state
-        
-        # Additional info
-        info = {
-            "metrics": game_state.get("metrics", {}),
-            "timestep": self.episode_steps,
-            "total_reward": self.total_reward,
-            "action": action_details,
-            "early_termination": terminated and not self.interface.is_game_over()
-        }
-        
-        return observation, reward, terminated, truncated, info
+            # Extract the observation
+            observation = self._extract_observation(game_state)
+            
+            # Calculate reward
+            reward = self._calculate_reward(game_state)
+            self.total_reward += reward
+            
+            # Check if the episode is done
+            terminated = self.interface.is_game_over()
+            truncated = self.episode_steps >= self.max_episode_steps
+            
+            # Create info dict
+            info = {
+                "action": action,
+                "action_success": success,
+                "game_state": game_state,
+                "step": self.episode_steps,
+                "total_reward": self.total_reward
+            }
+            
+            # Update steps
+            self.episode_steps += 1
+            
+            return observation, reward, terminated, truncated, info
+            
+        except Exception as e:
+            self.logger.error(f"Error in step method: {str(e)}")
+            
+            # Create a fallback observation similar to what reset would return
+            fallback_obs = self._get_fallback_observation()
+            
+            # Return minimal info with the error
+            return fallback_obs, -0.1, False, False, {"error": str(e), "recovery": "using_fallback"}
+    
+    def _get_fallback_observation(self):
+        """Create a minimal valid observation when normal observation fails."""
+        # Create an observation that matches our observation space
+        if isinstance(self.observation_space, spaces.Dict):
+            observation = {}
+            for key, space in self.observation_space.spaces.items():
+                if key == "visual":
+                    observation[key] = np.zeros(space.shape, dtype=space.dtype)
+                elif key == "metrics":
+                    observation[key] = np.zeros(space.shape, dtype=space.dtype)
+                else:
+                    observation[key] = np.zeros(space.shape, dtype=space.dtype)
+            return observation
+        elif isinstance(self.observation_space, spaces.Box):
+            # If it's just a Box (like an image), return zeros
+            return np.zeros(self.observation_space.shape, dtype=self.observation_space.dtype)
+        else:
+            # Fallback for other space types
+            return self.observation_space.sample()
     
     def reset(self, seed=None, options=None):
         """
@@ -238,15 +258,14 @@ class CS2Environment(gym.Env):
         observation = self._get_observation()
         
         # Reset internal state
-        self.current_step = 0
-        self.last_metrics = None
-        self.cumulative_reward = 0.0
+        self.episode_steps = 0
+        self.total_reward = 0.0
         
         # Initialize info dictionary
         info = {
             "metrics": self._get_metrics(),
             "game_state": "running",
-            "current_step": self.current_step
+            "step": self.episode_steps
         }
         
         return observation, info
