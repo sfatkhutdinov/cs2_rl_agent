@@ -3,6 +3,11 @@ import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 import random
+import datetime
+import json
+import os
+import time
+import threading
 from typing import Dict, Any, Tuple, List, Optional, Union
 
 from src.environment.autonomous_env import AutonomousCS2Environment, ActionType, Action
@@ -12,22 +17,12 @@ from src.interface.ollama_vision_interface import OllamaVisionInterface
 class VisionGuidedCS2Environment(AutonomousCS2Environment):
     """
     An extension of the autonomous environment that uses the Ollama vision model
-    to provide more intelligent guidance to the agent, especially for population growth.
+    to provide strategic guidance, but relies primarily on direct learning.
     """
     
     def __init__(self, base_env, exploration_frequency=0.3, random_action_frequency=0.2, 
-                 menu_exploration_buffer_size=50, logger=None, vision_guidance_frequency=0.5):
-        """
-        Initialize the vision-guided environment wrapper.
-        
-        Args:
-            base_env: The base CS2Environment to wrap
-            exploration_frequency: How often to trigger exploratory behavior (0-1)
-            random_action_frequency: How often to take completely random actions (0-1)
-            menu_exploration_buffer_size: Size of the buffer for storing discovered menu items
-            logger: Optional logger instance
-            vision_guidance_frequency: How often to use vision guidance for actions (0-1)
-        """
+                 menu_exploration_buffer_size=50, logger=None):
+        """Initialize the vision-guided environment wrapper."""
         super().__init__(
             base_env, 
             exploration_frequency=exploration_frequency,
@@ -38,24 +33,46 @@ class VisionGuidedCS2Environment(AutonomousCS2Environment):
         
         self.logger = logger or logging.getLogger("VisionGuidedEnv")
         
-        # Check if our interface is OllamaVisionInterface
-        if not isinstance(self.game_interface, OllamaVisionInterface):
-            self.logger.warning("The provided interface is not an OllamaVisionInterface. Some features may not work.")
+        # Vision guidance configuration
+        vision_config = self.env.config.get("environment", {}).get("vision_guidance", {})
+        self.vision_guidance_enabled = vision_config.get("enabled", True)
+        self.vision_guidance_frequency = vision_config.get("frequency", 0.1)
+        self.vision_cache_ttl = vision_config.get("cache_ttl", 30)
+        self.min_confidence = vision_config.get("min_confidence", 0.7)
+        self.max_consecutive_attempts = vision_config.get("max_consecutive_attempts", 3)
+        self.background_analysis = vision_config.get("background_analysis", True)
         
-        # Parameters for vision guidance
-        self.vision_guidance_frequency = vision_guidance_frequency
+        # Vision guidance state
+        self.vision_guidance_cache = {}
+        self.last_vision_query = 0
+        self.consecutive_vision_attempts = 0
+        self.vision_update_thread = None
+        self.vision_update_lock = threading.Lock()
         
-        # Tracking for vision guided actions
-        self.vision_guided_actions_taken = 0
-        self.successful_vision_guided_actions = 0
+        # Setup debugging directory
+        self.debug_dir = os.path.join("logs", "actions_debug")
+        os.makedirs(self.debug_dir, exist_ok=True)
         
-        # Add vision-guided actions to our action space
+        # Action tracking log
+        self.action_log_file = os.path.join(self.debug_dir, "action_history.jsonl")
+        
+        # Action statistics
+        self.action_stats = {
+            "total_actions": 0,
+            "vision_guided_actions": 0,
+            "successful_actions": 0,
+            "action_counts": {},
+            "vision_action_success_rate": {}
+        }
+        
+        # Add vision-guided actions
         self._add_vision_guided_actions()
         
         self.logger.info("Vision-guided environment initialized with extended action space")
+        self.logger.info(f"Action debug logs will be saved to: {self.debug_dir}")
     
     def _add_vision_guided_actions(self):
-        """Add vision-specific guided actions to the action space"""
+        """Add vision-specific guided actions to the action space."""
         vision_actions = [
             Action(
                 name="follow_population_advice",
@@ -66,101 +83,220 @@ class VisionGuidedCS2Environment(AutonomousCS2Environment):
                 name="address_visible_issue",
                 action_fn=lambda: self._address_visible_issue(),
                 action_type=ActionType.GAME_ACTION
-            ),
-            Action(
-                name="click_suggested_ui_element",
-                action_fn=lambda: self._click_suggested_ui_element(),
-                action_type=ActionType.UI_INTERACTION
-            ),
-            Action(
-                name="take_suggested_action",
-                action_fn=lambda: self._take_suggested_action(),
-                action_type=ActionType.GAME_ACTION
             )
         ]
         
         # Add the new actions to our action list
         for action in vision_actions:
-            self.actions.append(action)
+            self.action_handlers.append(action)
         
         # Update the action space
-        self.action_space = spaces.Discrete(len(self.actions))
+        self.action_space = spaces.Discrete(len(self.action_handlers))
         
-        self.logger.info(f"Added {len(vision_actions)} vision-guided actions to action space")
+        # Initialize action statistics
+        for action in self.action_handlers:
+            self.action_stats["action_counts"][action.name] = 0
+            self.action_stats["vision_action_success_rate"][action.name] = {
+                "attempts": 0,
+                "successes": 0
+            }
     
-    def _get_vision_interface(self) -> Optional[OllamaVisionInterface]:
-        """Helper to get the vision interface if it's the right type"""
-        if isinstance(self.game_interface, OllamaVisionInterface):
-            return self.game_interface
-        return None
+    def _update_vision_guidance_async(self):
+        """Update vision guidance in a background thread."""
+        if not self.vision_guidance_enabled:
+            return
+            
+        def update_thread():
+            try:
+                with self.vision_update_lock:
+                    if not isinstance(self.env.interface, OllamaVisionInterface):
+                        return
+                    
+                    try:
+                        screen = self.env.interface.capture_screen()
+                    except Exception as e:
+                        self.logger.warning(f"Failed to capture screen: {str(e)}")
+                        return
+                        
+                    try:
+                        response = self.env.interface.query_ollama(screen, self.env.interface.population_growth_prompt)
+                        
+                        if isinstance(response, dict) and "response" in response:
+                            guidance = self.env.interface.extract_json_from_response(response)
+                            if "error" not in guidance:
+                                self.vision_guidance_cache = {
+                                    "timestamp": time.time(),
+                                    "guidance": guidance,
+                                    "confidence": self.min_confidence
+                                }
+                                self.logger.debug("Updated vision guidance cache")
+                    except Exception as e:
+                        self.logger.warning(f"Failed to process vision guidance: {str(e)}")
+                        
+            except Exception as e:
+                self.logger.warning(f"Vision guidance update failed: {str(e)}")
+        
+        # Start the update in a background thread
+        if self.background_analysis:
+            if self.vision_update_thread is None or not self.vision_update_thread.is_alive():
+                self.vision_update_thread = threading.Thread(target=update_thread)
+                self.vision_update_thread.daemon = True
+                self.vision_update_thread.start()
+        else:
+            update_thread()
+    
+    def _should_use_vision_guidance(self) -> bool:
+        """Determine if vision guidance should be used for the current step."""
+        if not self.vision_guidance_enabled:
+            return False
+            
+        # Check if we've exceeded consecutive attempts
+        if self.consecutive_vision_attempts >= self.max_consecutive_attempts:
+            self.consecutive_vision_attempts = 0
+            return False
+            
+        # Check if guidance is stale
+        current_time = time.time()
+        if current_time - self.last_vision_query > self.vision_cache_ttl:
+            self._update_vision_guidance_async()
+            
+        # Use vision guidance with configured probability
+        return (
+            random.random() < self.vision_guidance_frequency and
+            "guidance" in self.vision_guidance_cache and
+            current_time - self.vision_guidance_cache["timestamp"] < self.vision_cache_ttl
+        )
     
     def _get_vision_guided_action(self) -> int:
-        """Get an action recommendation based on vision model analysis"""
-        vision_interface = self._get_vision_interface()
-        if not vision_interface:
-            return self._get_guided_exploratory_action()
-        
+        """Get an action recommendation based on cached vision guidance."""
         try:
-            # Get game state with vision enhancements
-            game_state = vision_interface.get_game_state()
+            guidance = self.vision_guidance_cache.get("guidance", {})
             
-            # If we have vision-enhanced data and population guidance
-            if "vision_enhanced" in game_state and "population_guidance" in game_state:
-                guidance = game_state["population_guidance"]
+            if "recommended_actions" in guidance and guidance["recommended_actions"]:
+                # Map recommended actions to available actions
+                action_names = []
+                for recommendation in guidance["recommended_actions"]:
+                    matching_actions = self._find_matching_actions(recommendation)
+                    action_names.extend(matching_actions)
                 
-                if "error" in guidance:
-                    self.logger.warning(f"Error in population guidance: {guidance['error']}")
-                    return self._get_guided_exploratory_action()
-                
-                # If we have recommended actions, pick from them
-                if "recommended_actions" in guidance and guidance["recommended_actions"]:
-                    action_names = []
-                    
-                    # Try to map the recommended text actions to our action space
-                    for recommendation in guidance["recommended_actions"]:
-                        # Find relevant actions in our action space that might match
-                        matching_actions = self._find_matching_actions(recommendation)
-                        action_names.extend(matching_actions)
-                    
-                    # If we found any matching actions, randomly select one
-                    if action_names:
-                        action_idx = self._get_action_idx_by_name(random.choice(action_names))
-                        if action_idx is not None:
-                            return action_idx
+                if action_names:
+                    # Select an action with preference for population-focused actions
+                    population_actions = [name for name in action_names if "population" in name]
+                    if population_actions and random.random() < 0.7:  # 70% chance to use population action
+                        selected_action = random.choice(population_actions)
+                    else:
+                        selected_action = random.choice(action_names)
+                        
+                    action_idx = self._get_action_idx_by_name(selected_action)
+                    if action_idx is not None:
+                        self.consecutive_vision_attempts += 1
+                        return action_idx
             
-            # If we have vision_enhanced but can't get specific guidance, try suggestions
-            if "vision_enhanced" in game_state and "suggestions" in game_state["vision_enhanced"]:
-                suggestions = game_state["vision_enhanced"]["suggestions"]
-                if suggestions:
-                    # Find matching actions for any suggestion
-                    action_names = []
-                    for suggestion in suggestions:
-                        matching_actions = self._find_matching_actions(suggestion)
-                        action_names.extend(matching_actions)
-                    
-                    if action_names:
-                        action_idx = self._get_action_idx_by_name(random.choice(action_names))
-                        if action_idx is not None:
-                            return action_idx
-            
-            # If we can't get specific guidance, use exploration actions
-            # Try population-specific actions first
-            population_actions = ["follow_population_advice", "address_visible_issue", 
-                                 "click_suggested_ui_element", "take_suggested_action"]
-            
-            # 50% chance to try one of our population-focused actions
-            if random.random() < 0.5:
-                action_name = random.choice(population_actions)
-                action_idx = self._get_action_idx_by_name(action_name)
-                if action_idx is not None:
-                    return action_idx
-            
-            # Fall back to regular exploration
+            self.consecutive_vision_attempts = 0
             return self._get_guided_exploratory_action()
-        
+            
         except Exception as e:
             self.logger.error(f"Error getting vision-guided action: {str(e)}")
+            self.consecutive_vision_attempts = 0
             return self._get_guided_exploratory_action()
+    
+    def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
+        """Take a step in the environment with optional vision guidance."""
+        is_vision_guided = False
+        original_action = action
+        
+        # Decide whether to use vision guidance
+        if self._should_use_vision_guidance():
+            guided_action = self._get_vision_guided_action()
+            self.logger.debug(f"Using vision guidance to select action {guided_action} instead of {action}")
+            action = guided_action
+            is_vision_guided = True
+        else:
+            self.consecutive_vision_attempts = 0
+        
+        # Get the action name for logging
+        action_name = "unknown"
+        if 0 <= action < len(self.action_handlers):
+            action_name = self.action_handlers[action].name
+        
+        # Take the step using the parent class
+        observation, reward, terminated, truncated, info = super().step(action)
+        
+        # Log the action
+        self._log_action(
+            action_idx=action,
+            action_name=action_name,
+            is_vision_guided=is_vision_guided,
+            success=reward > 0,
+            reward=reward,
+            info=info
+        )
+        
+        return observation, reward, terminated, truncated, info
+    
+    def reset(self, **kwargs):
+        """Reset the environment and vision guidance state."""
+        self.vision_guidance_cache = {}
+        self.last_vision_query = 0
+        self.consecutive_vision_attempts = 0
+        return super().reset(**kwargs)
+    
+    def close(self):
+        """Clean up resources."""
+        if self.vision_update_thread and self.vision_update_thread.is_alive():
+            self.vision_update_thread.join(timeout=1.0)
+        super().close()
+    
+    def _log_action(self, action_idx: int, action_name: str, is_vision_guided: bool, success: bool, reward: float, info: Dict[str, Any]) -> None:
+        """Log an action and its outcome"""
+        try:
+            # Convert numpy types to Python types for JSON serialization
+            if isinstance(action_idx, (np.int64, np.int32)):
+                action_idx = int(action_idx)
+            if isinstance(reward, (np.float64, np.float32)):
+                reward = float(reward)
+            
+            # Create log entry
+            log_entry = {
+                "timestamp": datetime.datetime.now().isoformat(),
+                "action_idx": action_idx,
+                "action_name": action_name,
+                "is_vision_guided": is_vision_guided,
+                "success": success,
+                "reward": reward,
+                "info": {k: str(v) if isinstance(v, (np.int64, np.int32, np.float64, np.float32)) else v 
+                        for k, v in info.items()}
+            }
+            
+            # Write to log file
+            with open(self.action_log_file, "a", encoding="utf-8") as f:
+                json.dump(log_entry, f)
+                f.write("\n")
+            
+            # Update statistics
+            self.action_stats["total_actions"] += 1
+            if is_vision_guided:
+                self.action_stats["vision_guided_actions"] += 1
+            if success:
+                self.action_stats["successful_actions"] += 1
+            
+            # Update action-specific stats
+            if action_name not in self.action_stats["action_counts"]:
+                self.action_stats["action_counts"][action_name] = 0
+            self.action_stats["action_counts"][action_name] += 1
+            
+            if is_vision_guided:
+                if action_name not in self.action_stats["vision_action_success_rate"]:
+                    self.action_stats["vision_action_success_rate"][action_name] = {
+                        "attempts": 0,
+                        "successes": 0
+                    }
+                self.action_stats["vision_action_success_rate"][action_name]["attempts"] += 1
+                if success:
+                    self.action_stats["vision_action_success_rate"][action_name]["successes"] += 1
+                    
+        except Exception as e:
+            self.logger.error(f"Error logging action: {str(e)}")
     
     def _find_matching_actions(self, text_description: str) -> List[str]:
         """Find actions in our action space that match a text description"""
@@ -200,14 +336,20 @@ class VisionGuidedCS2Environment(AutonomousCS2Environment):
             "explore": ["explore_menu", "explore_ui"]
         }
         
+        # Log all keyword matches for debugging
+        matched_keywords = []
+        
         # Check for keyword matches
         for keyword, actions in keyword_mappings.items():
             if keyword in text_description:
                 matching_actions.extend(actions)
+                matched_keywords.append(keyword)
+        
+        if matched_keywords:
+            self.logger.debug(f"Text '{text_description}' matched keywords: {matched_keywords}")
         
         # If we have our vision-guided actions, always include them
-        vision_actions = ["follow_population_advice", "address_visible_issue", 
-                          "click_suggested_ui_element", "take_suggested_action"]
+        vision_actions = ["follow_population_advice", "address_visible_issue"]
         
         # Add our vision-guided actions with lower priority
         matching_actions.extend(vision_actions)
@@ -227,7 +369,7 @@ class VisionGuidedCS2Environment(AutonomousCS2Environment):
     
     def _get_action_idx_by_name(self, action_name: str) -> Optional[int]:
         """Get the index of an action by its name"""
-        for i, action in enumerate(self.actions):
+        for i, action in enumerate(self.action_handlers):
             if action.name == action_name:
                 return i
         return None
@@ -236,6 +378,7 @@ class VisionGuidedCS2Environment(AutonomousCS2Environment):
         """Follow the advice from the vision model to grow population"""
         vision_interface = self._get_vision_interface()
         if not vision_interface:
+            self.logger.warning("Vision interface not available for population growth advice")
             return False
         
         try:
@@ -264,9 +407,30 @@ class VisionGuidedCS2Environment(AutonomousCS2Environment):
                     
                     if action_idx is not None:
                         # Get the action and execute it
-                        action = self.actions[action_idx]
-                        return action.action_fn()
+                        action = self.action_handlers[action_idx]
+                        success = action.action_fn()
+                        
+                        # Update statistics
+                        self.vision_guided_actions_taken += 1
+                        if success:
+                            self.successful_vision_guided_actions += 1
+                            self.logger.info(f"Successfully followed population advice with action: {action_name}")
+                        else:
+                            self.logger.warning(f"Failed to follow population advice with action: {action_name}")
+                        
+                        # Log this action
+                        self._log_action(
+                            action_idx=action_idx,
+                            action_name=action_name,
+                            is_vision_guided=True,
+                            success=success,
+                            reward=0,
+                            info={}
+                        )
+                        
+                        return success
             
+            self.logger.warning("No actionable population growth advice found")
             return False
         except Exception as e:
             self.logger.error(f"Error following population growth advice: {str(e)}")
@@ -276,6 +440,7 @@ class VisionGuidedCS2Environment(AutonomousCS2Environment):
         """Address issues detected by the vision model"""
         vision_interface = self._get_vision_interface()
         if not vision_interface:
+            self.logger.warning("Vision interface not available for addressing issues")
             return False
         
         try:
@@ -304,129 +469,54 @@ class VisionGuidedCS2Environment(AutonomousCS2Environment):
                     
                     if action_idx is not None:
                         # Get the action and execute it
-                        action = self.actions[action_idx]
-                        return action.action_fn()
+                        action = self.action_handlers[action_idx]
+                        success = action.action_fn()
+                        
+                        # Update statistics
+                        self.vision_guided_actions_taken += 1
+                        if success:
+                            self.successful_vision_guided_actions += 1
+                            self.logger.info(f"Successfully addressed issue with action: {action_name}")
+                        else:
+                            self.logger.warning(f"Failed to address issue with action: {action_name}")
+                        
+                        # Log this action
+                        self._log_action(
+                            action_idx=action_idx,
+                            action_name=action_name,
+                            is_vision_guided=True,
+                            success=success,
+                            reward=0,
+                            info={}
+                        )
+                        
+                        return success
             
+            self.logger.warning("No actionable issues found")
             return False
         except Exception as e:
             self.logger.error(f"Error addressing visible issue: {str(e)}")
             return False
     
-    def _click_suggested_ui_element(self) -> bool:
-        """Click on a UI element suggested by the vision model"""
-        vision_interface = self._get_vision_interface()
-        if not vision_interface:
-            return False
-        
-        try:
-            # Get enhanced game state
-            enhanced_state = vision_interface.get_enhanced_game_state()
-            
-            if "error" in enhanced_state:
-                self.logger.warning(f"Error getting UI elements: {enhanced_state['error']}")
-                return False
-            
-            # Extract UI elements
-            if "ui_elements" in enhanced_state and enhanced_state["ui_elements"]:
-                # Randomly select a UI element to click
-                ui_element = random.choice(enhanced_state["ui_elements"])
-                
-                element_name = ui_element.get("name", "unknown")
-                position = ui_element.get("position", "")
-                
-                self.logger.info(f"Clicking suggested UI element: {element_name} at {position}")
-                
-                # Try to map position text to screen coordinates
-                coords = self._parse_position_text(position)
-                
-                if coords:
-                    # Click at the coordinates
-                    x, y = coords
-                    return vision_interface.click_at_coordinates(x, y)
-                else:
-                    # If we can't get coordinates, see if the element is in our cached UI elements
-                    ui_elements = vision_interface.ui_element_cache
-                    
-                    for name, details in ui_elements.items():
-                        if element_name.lower() in name.lower():
-                            # Try to click on this element using the interface
-                            return vision_interface.perform_action({"type": "click", "target": name})
-            
-            return False
-        except Exception as e:
-            self.logger.error(f"Error clicking suggested UI element: {str(e)}")
-            return False
-    
-    def _take_suggested_action(self) -> bool:
-        """Take an action suggested by the vision model"""
-        vision_interface = self._get_vision_interface()
-        if not vision_interface:
-            return False
-        
-        try:
-            # Get enhanced game state
-            enhanced_state = vision_interface.get_enhanced_game_state()
-            
-            if "error" in enhanced_state:
-                self.logger.warning(f"Error getting suggested actions: {enhanced_state['error']}")
-                return False
-            
-            # Extract available actions
-            if "available_actions" in enhanced_state and enhanced_state["available_actions"]:
-                # Take the first suggested action
-                suggestion = enhanced_state["available_actions"][0]
-                
-                self.logger.info(f"Taking suggested action: {suggestion}")
-                
-                # Try to map this to a concrete action
-                matching_actions = self._find_matching_actions(suggestion)
-                
-                if matching_actions:
-                    # Take the first matching action
-                    action_name = matching_actions[0]
-                    action_idx = self._get_action_idx_by_name(action_name)
-                    
-                    if action_idx is not None:
-                        # Get the action and execute it
-                        action = self.actions[action_idx]
-                        return action.action_fn()
-            
-            # If no available actions, check suggestions
-            if "suggestions" in enhanced_state and enhanced_state["suggestions"]:
-                # Take the first suggestion
-                suggestion = enhanced_state["suggestions"][0]
-                
-                self.logger.info(f"Taking suggested improvement: {suggestion}")
-                
-                # Try to map this to a concrete action
-                matching_actions = self._find_matching_actions(suggestion)
-                
-                if matching_actions:
-                    # Take the first matching action
-                    action_name = matching_actions[0]
-                    action_idx = self._get_action_idx_by_name(action_name)
-                    
-                    if action_idx is not None:
-                        # Get the action and execute it
-                        action = self.actions[action_idx]
-                        return action.action_fn()
-            
-            return False
-        except Exception as e:
-            self.logger.error(f"Error taking suggested action: {str(e)}")
-            return False
+    def _get_vision_interface(self) -> Optional[OllamaVisionInterface]:
+        """Helper to get the vision interface if it's the right type"""
+        if isinstance(self.env.interface, OllamaVisionInterface):
+            return self.env.interface
+        return None
     
     def _parse_position_text(self, position_text: str) -> Optional[Tuple[int, int]]:
         """Try to parse a position description into screen coordinates"""
         position_text = position_text.lower()
         
         # Get screen dimensions
-        if isinstance(self.game_interface, OllamaVisionInterface):
-            width = self.game_interface.screen_region[2]
-            height = self.game_interface.screen_region[3]
+        if isinstance(self.env.interface, OllamaVisionInterface):
+            width = self.env.interface.screen_region[2]
+            height = self.env.interface.screen_region[3]
         else:
             # Fallback to standard resolution
             width, height = 1920, 1080
+        
+        self.logger.debug(f"Parsing position text: '{position_text}' for screen {width}x{height}")
         
         # Map text positions to coordinates
         if "top left" in position_text:
@@ -448,23 +538,6 @@ class VisionGuidedCS2Environment(AutonomousCS2Environment):
         elif "center" in position_text or "middle" in position_text:
             return (width // 2, height // 2)
         
-        return None
-    
-    def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
-        """
-        Override the step method to incorporate vision guidance.
-        
-        Args:
-            action: The action to take
-            
-        Returns:
-            observation, reward, terminated, truncated, info
-        """
-        # Decide whether to use vision guidance
-        if random.random() < self.vision_guidance_frequency:
-            guided_action = self._get_vision_guided_action()
-            self.logger.info(f"Using vision guidance to select action {guided_action} instead of {action}")
-            action = guided_action
-        
-        # Take the step using the parent class
-        return super().step(action) 
+        # No match found
+        self.logger.warning(f"Could not parse position text: '{position_text}'")
+        return None 

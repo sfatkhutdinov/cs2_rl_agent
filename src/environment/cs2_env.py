@@ -9,6 +9,7 @@ from ..interface.base_interface import BaseInterface
 from ..interface.vision_interface import VisionInterface
 from ..interface.api_interface import APIInterface
 from ..interface.auto_vision_interface import AutoVisionInterface
+from ..interface.ollama_vision_interface import OllamaVisionInterface
 
 
 class CS2Environment(gym.Env):
@@ -31,44 +32,89 @@ class CS2Environment(gym.Env):
         self.config = config
         self.logger = logging.getLogger("CS2Environment")
         
-        # Create the game interface based on configuration
-        interface_type = config["interface"]["type"]
+        # Setup interface based on config
+        interface_config = config.get("interface", {})
+        interface_type = interface_config.get("type", "api")
+        
+        # Create the appropriate interface
         if interface_type == "api":
-            try:
-                self.interface = APIInterface(config)
-                if not self.interface.connect():
-                    self.logger.warning("Failed to connect to the game via API. Falling back to vision interface.")
-                    self.interface = VisionInterface(config)
-            except Exception as e:
-                self.logger.warning(f"Error initializing API interface: {str(e)}. Falling back to vision interface.")
-                self.interface = VisionInterface(config)
-        elif interface_type == "auto_vision":
-            try:
-                self.logger.info("Using auto-detection vision interface.")
-                self.interface = AutoVisionInterface(config)
-            except Exception as e:
-                self.logger.warning(f"Error initializing auto-detection interface: {str(e)}. Falling back to standard vision interface.")
-                self.interface = VisionInterface(config)
-        else:
+            self.interface = APIInterface(config)
+            self.logger.info("Using API interface.")
+        elif interface_type == "vision":
             self.interface = VisionInterface(config)
+            self.logger.info("Using vision interface.")
+        elif interface_type == "auto_vision":
+            self.interface = AutoVisionInterface(config)
+            self.logger.info("Using auto vision interface.")
+        elif interface_type == "ollama_vision":
+            self.interface = OllamaVisionInterface(config)
+            self.logger.info("Using Ollama vision interface.")
+        else:
+            raise ValueError(f"Unknown interface type: {interface_type}")
         
-        # Connect to the game
-        if not self.interface.connect():
-            self.logger.error("Failed to connect to the game.")
-            raise RuntimeError("Failed to connect to the game.")
+        # Setup simulation parameters
+        env_config = config.get("environment", {})
+        self.max_episode_steps = env_config.get("max_episode_steps", 1000)
+        self.metrics_update_freq = env_config.get("metrics_update_freq", 10)
         
-        # Define observation space
+        # Connect to the game - with fallback mode
+        self.use_fallback = config.get("use_fallback_mode", False)
+        try:
+            connection_success = self.interface.connect()
+            if not connection_success:
+                if self.use_fallback:
+                    self.logger.warning("Failed to connect to the game. Using fallback mode.")
+                    self._setup_fallback_mode()
+                else:
+                    self.logger.error("Failed to connect to the game.")
+                    raise RuntimeError("Failed to connect to the game.")
+        except Exception as e:
+            if self.use_fallback:
+                self.logger.warning(f"Error connecting to the game: {str(e)}. Using fallback mode.")
+                self._setup_fallback_mode()
+            else:
+                self.logger.error(f"Error connecting to the game: {str(e)}")
+                raise RuntimeError(f"Error connecting to the game: {str(e)}")
+        
+        # Initialize time step counter
+        self.current_step = 0
+        
+        # Setup action and observation spaces
+        self._setup_action_space()
         self._setup_observation_space()
         
-        # Define action space
-        self._setup_action_space()
+        # Simulation state
+        self.last_observation = self._get_fallback_observation()
+        self.last_info = {}
+        
+        self.logger.info("Environment initialized successfully.")
         
         # State tracking
         self.episode_steps = 0
-        self.max_episode_steps = config["environment"]["max_episode_steps"]
         self.current_state = None
         self.total_reward = 0.0
         self.last_metrics = {}
+    
+    def _setup_fallback_mode(self):
+        """Setup fallback mode for the environment."""
+        self.logger.warning("Setting up fallback mode. Agent will train in simulated environment.")
+        self.connected = False
+        self.in_fallback_mode = True
+        
+        # Setup fallback metrics
+        self.fallback_metrics = {
+            "population": 0,
+            "happiness": 50.0,
+            "budget_balance": 10000.0,
+            "traffic": 50.0,
+            "noise_pollution": 0.0,
+            "air_pollution": 0.0
+        }
+        
+        # Simulation parameters
+        self.fallback_growth_rate = 0.05  # Population growth per action
+        self.fallback_budget_rate = -100.0  # Budget drain per action
+        self.fallback_happiness_decay = -0.1  # Happiness decay per action
     
     def _setup_observation_space(self):
         """Set up the observation space."""
@@ -139,134 +185,188 @@ class CS2Environment(gym.Env):
         Take a step in the environment.
         
         Args:
-            action: Action to take (index in the action_mapping)
+            action: Integer representing the action to take
             
         Returns:
-            Tuple of (observation, reward, terminated, truncated, info)
+            observation, reward, terminated, truncated, info
         """
-        if not 0 <= action < len(self.action_mapping):
-            self.logger.warning(f"Invalid action index: {action}")
-            action = 0  # Default to the first action
+        # Take the action in the environment
+        self.current_step += 1
+        self.episode_steps += 1
         
-        # Get the action details from the mapping
-        action_details = self.action_mapping[action]
-        
-        # Perform the action
-        success = self.interface.perform_action(action_details)
-        if not success:
-            self.logger.warning(f"Failed to perform action: {action_details}")
-        
-        # Wait for the game to process the action
-        time.sleep(0.2)  # Reduced from 0.5 to speed up learning
-        
-        # Get the new state
-        try:
-            game_state = self.interface.get_game_state()
-            
-            # Safety check - if game_state is None, try to recover
-            if game_state is None:
-                self.logger.warning("Received None game state, attempting recovery")
-                time.sleep(0.5)  # Wait a bit longer
-                game_state = self.interface.get_game_state()
-                
-                # If still None, create a minimal valid game state
-                if game_state is None:
-                    self.logger.error("Failed to recover game state, using fallback values")
-                    game_state = {
-                        "screen": np.zeros((84, 84, 3), dtype=np.uint8),
-                        "metrics": {
-                            "population": 0,
-                            "happiness": 0,
-                            "budget_balance": 0,
-                            "traffic": 0
-                        },
-                        "game_over": False
-                    }
-            
-            # Extract the observation
-            observation = self._extract_observation(game_state)
-            
-            # Calculate reward
-            reward = self._calculate_reward(game_state)
-            self.total_reward += reward
-            
-            # Check if the episode is done
-            terminated = self.interface.is_game_over()
-            truncated = self.episode_steps >= self.max_episode_steps
-            
-            # Create info dict
-            info = {
-                "action": action,
-                "action_success": success,
-                "game_state": game_state,
-                "step": self.episode_steps,
-                "total_reward": self.total_reward
-            }
-            
-            # Update steps
-            self.episode_steps += 1
-            
-            return observation, reward, terminated, truncated, info
-            
-        except Exception as e:
-            self.logger.error(f"Error in step method: {str(e)}")
-            
-            # Create a fallback observation similar to what reset would return
-            fallback_obs = self._get_fallback_observation()
-            
-            # Return minimal info with the error
-            return fallback_obs, -0.1, False, False, {"error": str(e), "recovery": "using_fallback"}
-    
-    def _get_fallback_observation(self):
-        """Create a minimal valid observation when normal observation fails."""
-        # Create an observation that matches our observation space
-        if isinstance(self.observation_space, spaces.Dict):
-            observation = {}
-            for key, space in self.observation_space.spaces.items():
-                if key == "visual":
-                    observation[key] = np.zeros(space.shape, dtype=space.dtype)
-                elif key == "metrics":
-                    observation[key] = np.zeros(space.shape, dtype=space.dtype)
-                else:
-                    observation[key] = np.zeros(space.shape, dtype=space.dtype)
-            return observation
-        elif isinstance(self.observation_space, spaces.Box):
-            # If it's just a Box (like an image), return zeros
-            return np.zeros(self.observation_space.shape, dtype=self.observation_space.dtype)
+        if hasattr(self, 'in_fallback_mode') and self.in_fallback_mode:
+            # In fallback mode, simulate the action
+            success = True
+            reward = self._simulate_fallback_action(action)
         else:
-            # Fallback for other space types
-            return self.observation_space.sample()
+            # Normal mode, perform the actual action
+            success = self.interface.perform_action(self._action_to_dict(action))
+            if not success:
+                # Action failed, apply small negative reward
+                reward = -0.01
+            else:
+                # Get the current game state and calculate reward
+                game_state = self.interface.get_game_state()
+                reward = self._calculate_reward(game_state)
+        
+        # Check if episode is done
+        terminated = self.interface.is_game_over() if not hasattr(self, 'in_fallback_mode') or not self.in_fallback_mode else False
+        truncated = self.episode_steps >= self.max_episode_steps
+        
+        # Get observation
+        observation = self._get_observation()
+        
+        # Assemble info dict
+        info = {
+            "action_success": success,
+            "episode_steps": self.episode_steps,
+            "metrics": self._get_metrics(),
+            "action": action
+        }
+        
+        # Remember the last observation
+        self.last_observation = observation
+        self.last_info = info
+        
+        return observation, reward, terminated, truncated, info
+        
+    def _simulate_fallback_action(self, action: int) -> float:
+        """
+        Simulate an action in fallback mode.
+        
+        Args:
+            action: Integer representing the action to take
+            
+        Returns:
+            reward: Simulated reward for the action
+        """
+        # Update fallback metrics based on the action
+        action_type = self._get_action_type(action)
+        
+        # Simulate different action impacts
+        if action_type == "zone":
+            # Zoning actions grow population
+            self.fallback_metrics["population"] += max(5, int(self.fallback_metrics["population"] * self.fallback_growth_rate))
+            self.fallback_metrics["happiness"] -= self.fallback_happiness_decay
+            self.fallback_metrics["budget_balance"] += self.fallback_budget_rate
+            
+            # More traffic with more population
+            if self.fallback_metrics["population"] > 1000:
+                self.fallback_metrics["traffic"] = min(100, self.fallback_metrics["traffic"] + 0.5)
+                
+            reward = 0.05
+                
+        elif action_type == "infrastructure":
+            # Infrastructure improves happiness but costs money
+            self.fallback_metrics["happiness"] = min(100, self.fallback_metrics["happiness"] + 1.0)
+            self.fallback_metrics["budget_balance"] += self.fallback_budget_rate * 2
+            
+            # Reduces traffic if population is high
+            if self.fallback_metrics["population"] > 1000:
+                self.fallback_metrics["traffic"] = max(0, self.fallback_metrics["traffic"] - 1.0)
+                
+            reward = 0.02
+                
+        elif action_type == "budget":
+            # Budget actions affect finances
+            self.fallback_metrics["budget_balance"] += self.fallback_budget_rate / 2
+            self.fallback_metrics["happiness"] -= self.fallback_happiness_decay / 2
+            
+            reward = 0.01
+            
+        else:
+            # Other actions have minimal impact
+            self.fallback_metrics["budget_balance"] += self.fallback_budget_rate / 4
+            reward = 0.0
+            
+        # Apply natural growth if population exists
+        if self.fallback_metrics["population"] > 0:
+            # Apply small natural growth
+            happiness_factor = max(0, self.fallback_metrics["happiness"] / 50)
+            natural_growth = max(1, int(self.fallback_metrics["population"] * 0.01 * happiness_factor))
+            self.fallback_metrics["population"] += natural_growth
+            
+            # Natural budget drain based on population
+            budget_drain = -0.1 * self.fallback_metrics["population"]
+            self.fallback_metrics["budget_balance"] += budget_drain
+            
+            # Add population growth component to reward
+            reward += 0.01 * natural_growth
+            
+        # Bankruptcy check
+        if self.fallback_metrics["budget_balance"] < 0:
+            reward -= 0.1
+            
+        # Clamp metrics to reasonable ranges
+        self.fallback_metrics["happiness"] = max(0, min(100, self.fallback_metrics["happiness"]))
+        self.fallback_metrics["traffic"] = max(0, min(100, self.fallback_metrics["traffic"]))
+        
+        return reward
+        
+    def _get_action_type(self, action: int) -> str:
+        """Determine the action type based on the action index."""
+        action_space = self.config["environment"]["action_space"]
+        
+        # Count the total actions in each category
+        total_zone = len(action_space.get("zone", []))
+        total_infrastructure = len(action_space.get("infrastructure", []))
+        
+        if action < total_zone:
+            return "zone"
+        elif action < total_zone + total_infrastructure:
+            return "infrastructure"
+        else:
+            return "budget"
     
     def reset(self, seed=None, options=None):
         """
-        Reset the environment to initial state.
+        Reset the environment to its initial state.
         
         Args:
-            seed: Optional random seed for reproducibility
-            options: Optional dictionary with additional options
+            seed: Random seed
+            options: Additional options
             
         Returns:
-            observation: Initial observation
-            info: Additional information dictionary
+            observation, info
         """
-        # Set seed if provided
         if seed is not None:
             np.random.seed(seed)
             
-        # Reset interface and get initial observation
-        self.interface.reset()
-        observation = self._get_observation()
-        
-        # Reset internal state
         self.episode_steps = 0
         self.total_reward = 0.0
         
-        # Initialize info dictionary
+        if hasattr(self, 'in_fallback_mode') and self.in_fallback_mode:
+            # In fallback mode, reset to initial values
+            self.fallback_metrics = {
+                "population": 0,
+                "happiness": 50.0,
+                "budget_balance": 10000.0,
+                "traffic": 50.0,
+                "noise_pollution": 0.0,
+                "air_pollution": 0.0
+            }
+        else:
+            # Try to reset the actual game
+            try:
+                self.interface.reset()
+            except Exception as e:
+                self.logger.warning(f"Error resetting game: {str(e)}")
+                if not hasattr(self, 'use_fallback') or not self.use_fallback:
+                    raise e
+                self._setup_fallback_mode()
+        
+        # Get the initial observation
+        observation = self._get_observation()
+        
+        # Return info dict with metrics
         info = {
+            "episode_steps": 0,
             "metrics": self._get_metrics(),
-            "game_state": "running",
-            "step": self.episode_steps
         }
+        
+        # Remember the last observation
+        self.last_observation = observation
+        self.last_info = info
         
         return observation, info
     
@@ -527,13 +627,25 @@ class CS2Environment(gym.Env):
     
     def _get_observation(self):
         """
-        Get the current observation from the game state.
+        Get the current observation from the environment.
         
         Returns:
-            Observation dictionary or array based on game state
+            Dictionary containing visual and metrics observations
         """
-        game_state = self.interface.get_game_state()
-        return self._extract_observation(game_state)
+        try:
+            if hasattr(self, 'in_fallback_mode') and self.in_fallback_mode:
+                # In fallback mode, return a simulated observation
+                return self._get_fallback_observation()
+            
+            # Get the current game state
+            game_state = self.interface.get_game_state()
+            
+            # Extract observation from game state
+            return self._extract_observation(game_state)
+            
+        except Exception as e:
+            self.logger.warning(f"Error getting observation: {str(e)}")
+            return self._get_fallback_observation()
     
     def get_observation(self):
         """
@@ -552,4 +664,106 @@ class CS2Environment(gym.Env):
             Dictionary of current game metrics
         """
         game_state = self.interface.get_game_state()
-        return game_state.get("metrics", {}) 
+        return game_state.get("metrics", {})
+    
+    def _action_to_dict(self, action: int) -> Dict[str, Any]:
+        """
+        Convert an action index to a dictionary representation for the interface.
+        
+        Args:
+            action: Integer representing the action to take
+            
+        Returns:
+            Dictionary representation of the action
+        """
+        action_space = self.config["environment"]["action_space"]
+        
+        # Count the total actions in each category
+        zone_actions = action_space.get("zone", [])
+        infrastructure_actions = action_space.get("infrastructure", [])
+        budget_actions = action_space.get("budget", [])
+        
+        # Determine which category this action belongs to
+        total_zone = len(zone_actions)
+        total_infrastructure = len(infrastructure_actions)
+        
+        if action < total_zone:
+            # Zone action
+            action_name = zone_actions[action]
+            return {"type": "zone", "zone_type": action_name}
+            
+        elif action < total_zone + total_infrastructure:
+            # Infrastructure action
+            infra_index = action - total_zone
+            action_name = infrastructure_actions[infra_index]
+            return {"type": "infrastructure", "infra_type": action_name}
+            
+        else:
+            # Budget action
+            budget_index = action - (total_zone + total_infrastructure)
+            if budget_index < len(budget_actions):
+                action_name = budget_actions[budget_index]
+                return {"type": "budget", "budget_action": action_name}
+            else:
+                # Fallback for invalid action indices
+                self.logger.warning(f"Invalid action index: {action}")
+                return {"type": "budget", "budget_action": "no_op"}
+    
+    def _get_fallback_observation(self):
+        """
+        Create a fallback observation when real observations can't be obtained.
+        
+        Returns:
+            Dictionary containing a valid observation structure
+        """
+        # For dictionary observation space
+        if isinstance(self.observation_space, spaces.Dict):
+            observation = {}
+            
+            for key, space in self.observation_space.spaces.items():
+                if key == "visual":
+                    # Create a blank image
+                    image_size = self.config["environment"]["observation_space"].get("image_size", [84, 84])
+                    grayscale = self.config["environment"]["observation_space"].get("grayscale", False)
+                    
+                    if grayscale:
+                        # Grayscale image
+                        observation[key] = np.zeros((image_size[0], image_size[1], 1), dtype=np.uint8)
+                    else:
+                        # Color image
+                        observation[key] = np.zeros((image_size[0], image_size[1], 3), dtype=np.uint8)
+                
+                elif key == "metrics":
+                    # Use fallback metrics if available
+                    if hasattr(self, 'fallback_metrics') and self.fallback_metrics:
+                        metrics = []
+                        
+                        # Get the metrics list from the config
+                        metrics_list = self.config["environment"]["observation_space"].get("metrics", [])
+                        
+                        # Add each metric value
+                        for metric in metrics_list:
+                            if metric in self.fallback_metrics:
+                                metrics.append(self.fallback_metrics[metric])
+                            else:
+                                metrics.append(0.0)
+                                
+                        # Convert to numpy array
+                        observation[key] = np.array(metrics, dtype=np.float32)
+                    else:
+                        # Create zeros if no fallback metrics
+                        observation[key] = np.zeros(space.shape, dtype=np.float32)
+                        
+                else:
+                    # For any other keys, use zeros
+                    observation[key] = np.zeros(space.shape, dtype=space.dtype)
+                    
+            return observation
+            
+        # For Box observation space
+        elif isinstance(self.observation_space, spaces.Box):
+            return np.zeros(self.observation_space.shape, dtype=self.observation_space.dtype)
+            
+        # For other types, return a sample
+        else:
+            return self.observation_space.sample() 

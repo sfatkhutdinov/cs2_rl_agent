@@ -260,21 +260,61 @@ class AutoVisionInterface(BaseInterface):
     
     def capture_screen(self) -> np.ndarray:
         """
-        Capture the current screen without any processing.
+        Capture the current screen content in the configured region.
         
         Returns:
-            NumPy array containing the raw screenshot
+            Numpy array of screen pixels in BGR format
         """
-        if not self.connected:
-            self.logger.warning("Not connected to the game.")
-            return np.zeros((self.screen_region[3], self.screen_region[2], 3), dtype=np.uint8)
-        
         try:
-            screenshot = self.sct.grab(self.monitor)
-            return np.array(screenshot)
+            # Initialize the screen capture object if not already done
+            if not hasattr(self, 'sct') or self.sct is None:
+                self.sct = mss.mss()
+            
+            # Capture the specified region
+            region = self.screen_region
+            monitor = {"top": region[1], "left": region[0], "width": region[2] - region[0], "height": region[3] - region[1]}
+            
+            # Capture the screen
+            sct_img = self.sct.grab(monitor)
+            
+            # Convert to numpy array
+            img = np.array(sct_img)
+            
+            # Convert BGRA to BGR by removing the alpha channel
+            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+            
+            return img
+            
         except Exception as e:
             self.logger.error(f"Failed to capture screen: {str(e)}")
-            return np.zeros((self.screen_region[3], self.screen_region[2], 3), dtype=np.uint8)
+            
+            # Try to reinitialize the screen capture object
+            try:
+                self.sct = mss.mss()
+                
+                # Capture the specified region
+                region = self.screen_region
+                monitor = {"top": region[1], "left": region[0], "width": region[2] - region[0], "height": region[3] - region[1]}
+                
+                # Capture the screen
+                sct_img = self.sct.grab(monitor)
+                
+                # Convert to numpy array
+                img = np.array(sct_img)
+                
+                # Convert BGRA to BGR by removing the alpha channel
+                img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+                
+                return img
+                
+            except Exception as e2:
+                self.logger.error(f"Failed to reinitialize screen capture: {str(e2)}")
+                
+                # Return a blank image as fallback
+                region = self.screen_region
+                width = region[2] - region[0]
+                height = region[3] - region[1]
+                return np.zeros((height, width, 3), dtype=np.uint8)
     
     def detect_ui_elements(self) -> bool:
         """
@@ -903,88 +943,24 @@ class AutoVisionInterface(BaseInterface):
         Reset the game to its initial state.
         
         Returns:
-            True if the game was reset successfully, False otherwise
+            True if successful, False otherwise
         """
-        if not self.connected:
-            self.logger.warning("Not connected to the game.")
-            return False
-        
         try:
-            # Try to pause the game first
-            self._click_pause_button()
+            # Open menu
+            self.press_key('escape')
             time.sleep(0.5)
             
-            # First try to find menu button through detection
-            menu_clicked = False
+            # Look for and click "New Game" button
+            # For now, we'll use a fixed position since UI detection might not be reliable during reset
+            # These coordinates assume 1920x1080 resolution
+            new_game_x = 100
+            new_game_y = 200
+            self.click_at_coordinates(new_game_x, new_game_y)
             
-            # Try OCR detection first
-            self.detect_ui_elements()
-            if "menu_button" in self.ui_element_cache:
-                region = self.ui_element_cache["menu_button"]["region"]
-                center_x = (region[0] + region[2]) // 2
-                center_y = (region[1] + region[3]) // 2
-                pyautogui.click(center_x, center_y)
-                menu_clicked = True
+            # Wait for game to load
+            time.sleep(2.0)
             
-            if not menu_clicked:
-                # Try ESC key first
-                pyautogui.press('esc')
-                time.sleep(0.5)
-                
-                # Then try clicking top-left corner as fallback
-                pyautogui.click(20, 20)
-            
-            time.sleep(1)  # Wait for menu to open
-            
-            # Look for "New Game" button using OCR
-            screenshot = self.capture_screen()
-            text = pytesseract.image_to_string(screenshot)
-            
-            new_game_clicked = False
-            if "new game" in text.lower():
-                # Try to find and click "New Game" text location
-                data = pytesseract.image_to_data(screenshot, output_type=pytesseract.Output.DICT)
-                for i, word in enumerate(data['text']):
-                    if 'new game' in word.lower():
-                        x = data['left'][i]
-                        y = data['top'][i]
-                        pyautogui.click(x + self.screen_region[0], y + self.screen_region[1])
-                        new_game_clicked = True
-                        break
-            
-            if not new_game_clicked:
-                # Fallback to common positions
-                screen_width = self.screen_region[2]
-                screen_height = self.screen_region[3]
-                
-                # Try a few common positions for the "New Game" button
-                positions = [
-                    (0.2, 0.3),  # Common position 1
-                    (0.2, 0.4),  # Common position 2
-                    (0.3, 0.3)   # Common position 3
-                ]
-                
-                for x_ratio, y_ratio in positions:
-                    pyautogui.click(int(screen_width * x_ratio), int(screen_height * y_ratio))
-                    time.sleep(0.5)
-            
-            # Wait for the game to load and stabilize
-            time.sleep(7)  # Increased wait time for game load
-            
-            # Reset internal state
-            self.last_metrics = {}
-            self.game_speed = 1
-            self.ui_element_cache = {}
-            self.cache_timestamp = 0
-            
-            # Try to detect UI elements to confirm we're in game
-            if self.detect_ui_elements():
-                self.logger.info("Game reset successful - UI elements detected")
-                return True
-            else:
-                self.logger.warning("Game reset may have failed - no UI elements detected")
-                return False
-            
+            return True
         except Exception as e:
             self.logger.error(f"Failed to reset game: {str(e)}")
             return False

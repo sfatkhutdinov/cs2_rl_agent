@@ -8,17 +8,29 @@ environment:
   # Interface config
   interface:
     type: "ollama_vision"  # Using the Ollama vision interface
-    screen_region: [0, 0, 1920, 1080]  # Full HD resolution
     templates_dir: "templates"
     ocr_enabled: true
+    vision:  # Added vision configuration
+      detection_method: "ollama"
+      ocr_confidence: 0.7
+      template_threshold: 0.8
+      cache_detections: true
+      screen_capture_fps: 10
+      screen_region: [0, 0, 1920, 1080]  # Full HD resolution
   
   # Ollama vision model configuration
   ollama:
     url: "http://localhost:11434/api/generate"
     model: "granite3.2-vision:latest"
-    max_tokens: 1000
-    temperature: 0.7
-    cache_ttl: 5  # Cache responses for 5 seconds to reduce API calls
+    max_tokens: 300  # Further reduced to avoid extra text
+    temperature: 0.01  # Almost deterministic responses
+    cache_ttl: 30  # Cache responses for 30 seconds
+    guidance_update_freq: 100  # Update vision guidance every 100 steps
+    screenshot_frequency: 10  # Save every 10th screenshot
+    response_timeout: 10  # Reduced timeout for faster training
+    retries: 2  # Reduced retries
+    retry_delay: 0.5  # Shorter retry delay
+    json_validation: true  # Enable strict JSON validation
   
   # Observation space configuration - enhanced for better visual processing
   observation_space:
@@ -30,6 +42,38 @@ environment:
     normalize_metrics: true
     metrics: ["population", "happiness", "budget_balance", "traffic"]
     
+  # Action space configuration
+  action_space:
+    type: "discrete"
+    zone:
+      - "residential"
+      - "commercial" 
+      - "industrial"
+    infrastructure:
+      - "road"
+      - "power_line"
+      - "water_pipe"
+      - "power_plant"
+      - "water_pump"
+      - "wind_turbine"
+      - "bulldoze"
+    budget:
+      - "increase_tax"
+      - "decrease_tax"
+      - "increase_budget"
+      - "decrease_budget"
+      - "pause"
+      - "increase_speed"
+      - "decrease_speed"
+      - "camera_up"
+      - "camera_down"
+      - "camera_left"
+      - "camera_right"
+      - "camera_zoom_in"
+      - "camera_zoom_out"
+      - "open_menu"
+      - "close_menu"
+  
   # Reward function configuration - more nuanced rewards with focus on population
   reward_function:
     population_growth: 0.2  # Increased weight on population growth
@@ -55,11 +99,9 @@ agent:
     activation_fn: "relu"  # Will be mapped to torch.nn.ReLU in code
     ortho_init: true
     normalize_images: true
-    features_extractor_kwargs:
-      features_dim: 256    # Larger feature dimension
     optimizer_kwargs:
-      eps: 1e-5
-      weight_decay: 1e-5   # Slight regularization for better generalization
+      eps: 0.00001
+      weight_decay: 0.00001
   
   # Training hyperparameters optimized for faster learning
   learning_rate: 0.0003
@@ -90,7 +132,12 @@ autonomous:
   
 # Vision guidance config
 vision_guidance:
-  frequency: 0.5  # 50% chance to use vision guidance for action selection
+  enabled: true
+  frequency: 0.1  # 10% chance to use vision guidance
+  cache_ttl: 30  # Cache vision guidance for 30 seconds
+  min_confidence: 0.7  # Minimum confidence for vision-guided actions
+  max_consecutive_attempts: 3  # Max consecutive vision-guided actions
+  background_analysis: true  # Run vision analysis in background
   
 # Memory monitoring config - increased for high-end hardware
 memory_monitor:

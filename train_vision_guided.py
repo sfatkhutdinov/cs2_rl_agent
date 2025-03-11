@@ -37,46 +37,43 @@ logger = logging.getLogger("VisionGuidedTraining")
 
 def make_env(rank, config, seed=0):
     """
-    Helper function to create a vectorized environment.
+    Create an environment creation function for stable-baselines3.
     
     Args:
-        rank: Subprocess rank
+        rank: Environment rank for parallel training
         config: Configuration dictionary
-        seed: Random seed
+        seed: Random seed for reproducibility
         
     Returns:
-        A function that creates and returns the environment
+        Function that creates the environment
     """
     def _init():
-        # Set environment-level random seed
-        set_random_seed(seed + rank)
-        
-        # Initialize the base CS2Environment
+        # Extract interface type for logging
         interface_type = config["environment"]["interface"]["type"]
         
-        if interface_type == "ollama_vision":
-            logger.info(f"Creating OllamaVisionInterface")
-            # Create vision interface
-            interface = OllamaVisionInterface(config["environment"])
-        else:
-            logger.info(f"Creating AutoVisionInterface (no Ollama vision)")
-            interface = AutoVisionInterface(config["environment"])
+        # Build environment config
+        env_config = {
+            "interface": config["environment"]["interface"],
+            "ollama": config["environment"].get("ollama", {}),
+            "environment": {
+                "observation_space": config["environment"]["observation_space"],
+                "action_space": config["environment"]["action_space"],
+                "reward_function": config["environment"]["reward_function"],
+                "max_episode_steps": config["environment"]["max_episode_steps"],
+                "metrics_update_freq": config["environment"]["metrics_update_freq"],
+                "pause_on_menu": config["environment"].get("pause_on_menu", False),
+                "action_repeat": config["environment"].get("action_repeat", 1),
+                "vision_guidance": config["environment"].get("vision_guidance", {})
+            },
+            "use_fallback_mode": True  # Enable fallback mode
+        }
         
         # Create base environment
-        base_env = CS2Environment(
-            interface=interface,
-            observation_config=config["environment"]["observation_space"],
-            reward_function_config=config["environment"]["reward_function"],
-            max_episode_steps=config["environment"]["max_episode_steps"],
-            metrics_update_freq=config["environment"]["metrics_update_freq"],
-            pause_on_menu=config["environment"].get("pause_on_menu", False),
-            action_repeat=config["environment"].get("action_repeat", 1),
-            logger=logging.getLogger(f"CS2Env_{rank}")
-        )
+        base_env = CS2Environment(config=env_config)
+        base_env.logger = logging.getLogger(f"CS2Env_{rank}")
         
         # Wrap in VisionGuidedCS2Environment
         autonomous_config = config.get("autonomous", {})
-        vision_guidance_config = config.get("vision_guidance", {})
         
         # Create the vision-guided environment
         env = VisionGuidedCS2Environment(
@@ -84,7 +81,6 @@ def make_env(rank, config, seed=0):
             exploration_frequency=autonomous_config.get("exploration_frequency", 0.3),
             random_action_frequency=autonomous_config.get("random_action_frequency", 0.2),
             menu_exploration_buffer_size=autonomous_config.get("menu_exploration_buffer_size", 50),
-            vision_guidance_frequency=vision_guidance_config.get("frequency", 0.5),
             logger=logging.getLogger(f"VisionGuidedEnv_{rank}")
         )
         

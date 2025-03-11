@@ -461,4 +461,58 @@ class MenuExplorer:
         x1, y1 = pos1
         x2, y2 = pos2
         distance = ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
-        return distance <= threshold 
+        return distance <= threshold
+    
+    def explore_random_menu(self, interface) -> Dict[str, Any]:
+        """
+        Explore a random menu item using the provided interface.
+        
+        Args:
+            interface: The game interface to use for interaction
+            
+        Returns:
+            Dict with exploration results
+        """
+        # Capture the current screen
+        try:
+            screenshot = interface.capture_screen()
+        except Exception as e:
+            self.logger.error(f"Failed to capture screen: {str(e)}")
+            return {"success": False, "error": str(e)}
+            
+        # Explore the screen
+        exploration_result = self.explore_screen(screenshot)
+        
+        # If we found menu items
+        if exploration_result["success"] and exploration_result["menu_items"]:
+            # Pick a random menu item to click
+            menu_item = random.choice(exploration_result["menu_items"])
+            
+            # Click on the menu item
+            click_x, click_y = menu_item["position"]
+            self.logger.info(f"Exploring menu item: {menu_item['name']} at {click_x}, {click_y}")
+            
+            try:
+                success = interface.click_at_coordinates(click_x, click_y)
+                
+                # Update our result
+                exploration_result["clicked_item"] = menu_item["name"]
+                exploration_result["click_success"] = success
+                
+                # Wait a bit for any animations
+                time.sleep(0.5)
+                
+                return exploration_result
+            except Exception as e:
+                self.logger.error(f"Failed to click menu item: {str(e)}")
+                return {"success": False, "error": str(e)}
+        
+        # If we didn't find anything, try clicking the menu button
+        try:
+            self.logger.info("No menu items found, trying to open main menu")
+            interface.perform_action({"type": "menu", "action": "open"})
+            time.sleep(0.5)
+            return {"success": True, "opened_main_menu": True}
+        except Exception as e:
+            self.logger.error(f"Failed to open main menu: {str(e)}")
+            return {"success": False, "error": str(e)} 

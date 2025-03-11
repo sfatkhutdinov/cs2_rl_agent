@@ -6,13 +6,22 @@ seed: 42  # Random seed for reproducibility
 
 # Interface settings
 interface:
-  type: "auto_vision"  # Use the automatic vision interface
+  type: "ollama_vision"  # Changed from auto_vision to ollama_vision
   vision:
-    detection_method: "ocr"  # Use OCR for text detection
-    cache_detections: true  # Cache detected UI elements for faster access
-    ocr_confidence: 0.5  # Lower threshold to detect more potential UI elements
-    template_threshold: 0.6  # Lower threshold for more detection possibilities
-    screen_region: [0, 0, 1920, 1080]  # Default full screen region (will be adjusted automatically)
+    detection_method: "ollama"  # Changed from ocr to ollama
+    cache_detections: true
+    ocr_confidence: 0.7  # Increased from 0.5 for better accuracy
+    template_threshold: 0.8  # Increased from 0.6 for better accuracy
+    screen_region: [0, 0, 1920, 1080]
+    screen_capture_fps: 10
+  
+  # Added Ollama configuration
+  ollama:
+    url: "http://localhost:11434/api/generate"
+    model: "granite3.2-vision:latest"
+    max_tokens: 1000
+    temperature: 0.7
+    cache_ttl: 5
 
 # Environment settings
 environment:

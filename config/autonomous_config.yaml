@@ -7,10 +7,24 @@ seed: 42
 environment:
   # Interface config
   interface:
-    type: "auto_vision"
+    type: "ollama_vision"
     screen_region: [0, 0, 1920, 1080]  # Full HD resolution
     templates_dir: "templates"
     ocr_enabled: true
+    vision:
+      detection_method: "ollama"
+      ocr_confidence: 0.7
+      template_threshold: 0.8
+      cache_detections: true
+      screen_capture_fps: 10
+  
+  # Ollama vision model configuration
+  ollama:
+    url: "http://localhost:11434/api/generate"
+    model: "granite3.2-vision:latest"
+    max_tokens: 1000
+    temperature: 0.7
+    cache_ttl: 5  # Cache responses for 5 seconds to reduce API calls
   
   # Observation space configuration - enhanced for better visual processing
   observation_space:

@@ -2,17 +2,27 @@
 
 # Game Interface Settings
 interface:
-  type: "api"  # "api" or "vision"
+  type: "vision"  # "api" or "vision" or "ollama_vision"
   # API settings (if available)
   api:
     host: "localhost"
     port: 5000
     timeout: 30
-  # Computer Vision settings (fallback)
+  # Computer Vision settings
   vision:
-    capture_fps: 5
+    capture_fps: 10
     screen_region: [0, 0, 1920, 1080]  # [x, y, width, height]
     ocr_confidence: 0.7
+    detection_method: "ollama"  # "template", "ocr", or "ollama"
+    template_threshold: 0.8
+    cache_detections: true
+  # Ollama vision model settings
+  ollama:
+    url: "http://localhost:11434/api/generate"
+    model: "granite3.2-vision:latest"
+    max_tokens: 1000
+    temperature: 0.7
+    cache_ttl: 5
 
 # Environment Settings
 environment:
