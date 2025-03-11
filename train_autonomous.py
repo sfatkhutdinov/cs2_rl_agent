@@ -48,64 +48,48 @@ def make_env(rank, config, seed=0):
         set_random_seed(seed + rank)
         
         # Create the base environment
-        interface_type = config.get("interface", {}).get("type", "auto_vision")
+        interface_type = config.get("environment", {}).get("interface", {}).get("type", "auto_vision")
         if interface_type == "auto_vision":
             # Use the automatic vision interface
             interface_config = {
                 "interface": {
                     "type": "auto_vision",
                     "vision": {
-                        "detection_method": config.get("interface", {}).get("detection_method", "ocr"),
-                        "ocr_confidence": config.get("interface", {}).get("ocr_confidence", 0.6),
-                        "template_threshold": config.get("interface", {}).get("template_threshold", 0.7),
-                        "cache_detections": config.get("interface", {}).get("cache_detections", True),
-                        "screen_region": config.get("interface", {}).get("vision", {}).get("screen_region", [0, 0, 1920, 1080])
-                    }
+                        "detection_method": "ocr",  # Default to OCR
+                        "ocr_confidence": 0.6,
+                        "template_threshold": 0.7,
+                        "screen_region": config.get("environment", {}).get("interface", {}).get("screen_region", None)
+                    },
+                    "templates_dir": config.get("environment", {}).get("interface", {}).get("templates_dir", "templates"),
+                    "ocr_enabled": config.get("environment", {}).get("interface", {}).get("ocr_enabled", True)
                 }
             }
-            interface = AutoVisionInterface(config=interface_config)
-            interface.logger = logger  # Set logger after initialization
         else:
-            raise ValueError(f"Unknown interface type: {interface_type}")
-            
-        # Create base environment configuration
+            # Default to auto vision if type not recognized
+            interface_config = {"interface": {"type": "auto_vision"}}
+        
+        # Create environment config with all default values
         env_config = {
-            "interface": interface_config["interface"],  # Pass the same interface config
+            **interface_config,
             "environment": {
-                "type": config.get("environment", {}).get("type", "cs2"),
-                "observation_space": {
-                    "type": config.get("environment", {}).get("observation_space", {}).get("type", "combined"),
-                    "include_visual": True,  # Enable visual observations
-                    "include_metrics": True,  # Enable metric observations
-                    "image_size": [84, 84],  # Observation resolution (corrected from visual_resolution)
-                    "grayscale": True,  # Convert to grayscale (corrected from use_grayscale)
-                    "normalize_metrics": True,  # Normalize metric values
-                    "metrics": config.get("environment", {}).get("metrics", [
-                        "population",
-                        "happiness",
-                        "budget_balance",
-                        "traffic"
-                    ])
-                },
                 "action_space": {
-                    "type": config.get("environment", {}).get("action_space", {}).get("type", "advanced"),
-                    "continuous": config.get("environment", {}).get("action_space", {}).get("continuous", False),
-                    "zone": config.get("environment", {}).get("action_space", {}).get("zone", [
+                    "type": "advanced",
+                    "zone": [
                         "residential",
-                        "commercial", 
+                        "commercial",
                         "industrial",
                         "office",
                         "delete_zone"
-                    ]),
-                    "infrastructure": config.get("environment", {}).get("action_space", {}).get("infrastructure", [
+                    ],
+                    "infrastructure": [
                         "road",
                         "power_line",
                         "water_pipe",
                         "park",
                         "service_building", 
                         "delete_infrastructure"
-                    ]),
-                    "budget": config.get("environment", {}).get("action_space", {}).get("budget", [
+                    ],
+                    "budget": [
                         "increase_residential_tax",
                         "decrease_residential_tax", 
                         "increase_commercial_tax",
@@ -114,21 +98,9 @@ def make_env(rank, config, seed=0):
                         "decrease_industrial_tax",
                         "increase_service_budget",
                         "decrease_service_budget"
-                    ])
+                    ]
                 },
-                "reward_function": {
-                    "type": config.get("environment", {}).get("reward_function", {}).get("type", "balanced"),
-                    "weights": config.get("environment", {}).get("reward_function", {}).get("weights", {
-                        "population": 0.3,
-                        "happiness": 0.2,
-                        "budget": 0.2,
-                        "traffic": 0.2,
-                        "discovery": 0.1
-                    })
-                },
-                "max_episode_steps": config.get("environment", {}).get("max_episode_steps", 2000),
-                "metrics_update_freq": config.get("environment", {}).get("metrics_update_freq", 10),
-                "pause_on_menu": config.get("environment", {}).get("pause_on_menu", False)
+                "reward_function": config.get("environment", {}).get("reward_function", {})
             }
         }
         
@@ -137,21 +109,21 @@ def make_env(rank, config, seed=0):
         base_env.logger = logger  # Set logger after initialization
         
         # Wrap with autonomous environment
+        autonomous_config = config.get("autonomous", {})
         env = AutonomousCS2Environment(
             base_env=base_env,
-            exploration_frequency=config.get("exploration", {}).get("frequency", 0.3),
-            random_action_frequency=config.get("exploration", {}).get("random_action_frequency", 0.2),
-            menu_exploration_buffer_size=config.get("exploration", {}).get("menu_buffer_size", 50),
+            exploration_frequency=autonomous_config.get("exploration_frequency", 0.3),
+            random_action_frequency=autonomous_config.get("random_action_frequency", 0.2),
+            menu_exploration_buffer_size=autonomous_config.get("menu_exploration_buffer_size", 50),
             logger=logger
         )
         
         # Wrap with Monitor for logging
-        log_dir = config.get("paths", {}).get("log_dir", "logs")
-        os.makedirs(log_dir, exist_ok=True)
-        env = Monitor(env, os.path.join(log_dir, f"monitor_{rank}"))
+        env_name = f"cs2_autonomous_{rank}"
+        env = Monitor(env, os.path.join("experiments", config.get("experiment_name", "autonomous"), "logs", env_name))
         
         return env
-    
+        
     return _init
 
 
@@ -199,8 +171,9 @@ def train(config_path):
     # Create vectorized environment
     env = DummyVecEnv([make_env(i, config, seed + i) for i in range(n_envs)])
     
-    # Wrap environment with image transpose for CNNs if using images
-    if config.get("agent", {}).get("policy_type", "").lower() == "cnnpolicy":
+    # Only wrap with VecTransposeImage if using CnnPolicy (not for MultiInputPolicy)
+    policy_type = config.get("agent", {}).get("policy_type", "").lower()
+    if policy_type == "cnnpolicy":
         env = VecTransposeImage(env)
     
     # Set up checkpoint callback
@@ -219,7 +192,7 @@ def train(config_path):
         eval_env = DummyVecEnv([make_env(0, config, seed + 1000)])  # Different seed
         
         # Ensure the eval environment has the same wrappers as the training environment
-        if config.get("agent", {}).get("policy_type", "").lower() == "cnnpolicy":
+        if policy_type == "cnnpolicy":
             eval_env = VecTransposeImage(eval_env)
         
         eval_callback = EvalCallback(

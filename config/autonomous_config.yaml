@@ -22,7 +22,7 @@ environment:
 
 # Agent configuration
 agent:
-  policy_type: "MlpPolicy"  # Options: MlpPolicy, CnnPolicy
+  policy_type: "MultiInputPolicy"  # Required for dictionary observation spaces
   policy_kwargs:
     net_arch:
       pi: [64, 32]  # Policy network
