@@ -9,6 +9,18 @@ from src.interface.menu_explorer import MenuExplorer
 from src.environment.cs2_env import CS2Environment
 from stable_baselines3.common.monitor import Monitor
 import pyautogui
+from enum import Enum, auto
+from collections import namedtuple
+
+# Define action types
+class ActionType(Enum):
+    CAMERA_CONTROL = auto()
+    UI_INTERACTION = auto()
+    GAME_ACTION = auto()
+    KEYBOARD = auto()
+
+# Define action structure
+Action = namedtuple('Action', ['name', 'action_fn', 'action_type'])
 
 class AutonomousCS2Environment(gym.Wrapper):
     """
@@ -67,8 +79,57 @@ class AutonomousCS2Environment(gym.Wrapper):
         """Extend the action space with additional control actions"""
         # Create wrappers for the interface methods
         actions = [
-            # Original base actions (keep as is)
-            # ... existing code ...
+            # Define some basic exploration actions
+            Action(
+                name="explore_menu",
+                action_fn=lambda: self._explore_menu(),
+                action_type=ActionType.UI_INTERACTION
+            ),
+            Action(
+                name="explore_ui",
+                action_fn=lambda: self._explore_ui(),
+                action_type=ActionType.UI_INTERACTION
+            ),
+            Action(
+                name="random_action",
+                action_fn=lambda: self._take_random_base_action(),
+                action_type=ActionType.GAME_ACTION
+            ),
+            Action(
+                name="repeat_last_action",
+                action_fn=lambda: self._repeat_last_action(),
+                action_type=ActionType.GAME_ACTION
+            ),
+            Action(
+                name="zoom_in",
+                action_fn=lambda: self.env.interface.zoom_with_wheel(5),
+                action_type=ActionType.CAMERA_CONTROL
+            ),
+            Action(
+                name="zoom_out",
+                action_fn=lambda: self.env.interface.zoom_with_wheel(-5),
+                action_type=ActionType.CAMERA_CONTROL
+            ),
+            Action(
+                name="pan_left",
+                action_fn=lambda: self.env.interface.pan_view("left"),
+                action_type=ActionType.CAMERA_CONTROL
+            ),
+            Action(
+                name="pan_right",
+                action_fn=lambda: self.env.interface.pan_view("right"),
+                action_type=ActionType.CAMERA_CONTROL
+            ),
+            Action(
+                name="pan_up",
+                action_fn=lambda: self.env.interface.pan_view("up"),
+                action_type=ActionType.CAMERA_CONTROL
+            ),
+            Action(
+                name="pan_down",
+                action_fn=lambda: self.env.interface.pan_view("down"),
+                action_type=ActionType.CAMERA_CONTROL
+            ),
         ]
         
         # Add camera rotation actions
@@ -613,3 +674,81 @@ class AutonomousCS2Environment(gym.Wrapper):
                             return True
         
         return False 
+
+    def _explore_menu(self):
+        """
+        Explore the game menus by clicking on menu items.
+        
+        Returns:
+            True if exploration was successful, False otherwise
+        """
+        # Use menu explorer to find and click on a menu item
+        result = self.menu_explorer.explore_random_menu(self.env.interface)
+        
+        # Update discovery buffer with the result
+        self._update_discovery_buffer(result)
+        
+        return result['success']
+    
+    def _explore_ui(self):
+        """
+        Explore the game UI by clicking on UI elements.
+        
+        Returns:
+            True if exploration was successful, False otherwise
+        """
+        # Get screen dimensions
+        screen_region = self.env.interface.screen_region
+        width, height = screen_region[2], screen_region[3]
+        
+        # Generate random coordinates within the screen region
+        x = np.random.randint(0, width)
+        y = np.random.randint(0, height)
+        
+        # Click at the random coordinates
+        success = self.env.interface.click_at_coordinates(x, y)
+        
+        return success
+    
+    def _take_random_base_action(self):
+        """
+        Take a random action from the base environment's action space.
+        
+        Returns:
+            True if the action was successful, False otherwise
+        """
+        # Choose a random action from the base environment
+        random_action = np.random.randint(0, self.env.action_space.n)
+        
+        # Perform the action using the base environment's step method
+        try:
+            observation, reward, terminated, truncated, info = self.env.step(random_action)
+            
+            # Track the observation and reward
+            self.last_observation = observation
+            self.last_reward = reward
+            self.last_done = terminated or truncated
+            self.last_info = info
+            
+            return True
+        except Exception as e:
+            self.logger.error(f"Error taking random base action: {e}")
+            return False
+    
+    def _repeat_last_action(self):
+        """
+        Repeat the last action that was taken.
+        
+        Returns:
+            True if the action was repeated successfully, False otherwise
+        """
+        if hasattr(self, 'last_action'):
+            try:
+                observation, reward, terminated, truncated, info = self.step(self.last_action)
+                return True
+            except Exception as e:
+                self.logger.error(f"Error repeating last action: {e}")
+                return False
+        else:
+            self.logger.warning("No last action to repeat")
+            return False 
