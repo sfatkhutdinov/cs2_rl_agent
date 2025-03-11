@@ -1,0 +1,78 @@
+# Configuration for tutorial-guided RL agent in Cities: Skylines 2
+
+# Basic environment settings
+environment:
+  observation_type: "dict"  # Use dictionary observation space
+  reward_type: "combined"   # Use combined reward function
+  action_type: "discrete"   # Use discrete action space
+  game_path: ""             # Path to game executable (empty for default)
+  interface_type: "auto"    # Use AutoInterface to connect to the game
+  max_steps: 500            # Maximum steps per episode
+  interface_port: 8001      # Port for game connection
+  use_fallback_mode: true   # Enable fallback mode for robustness
+  reward_shaping:
+    money_weight: 1.0
+    happiness_weight: 2.0
+    population_weight: 1.5
+    growth_weight: 2.0
+    education_weight: 1.0
+    health_weight: 1.0
+    unemployment_penalty: -0.5
+    pollution_penalty: -0.5
+    abandonment_penalty: -2.0
+    bankruptcy_penalty: -5.0
+
+# Observation space configuration
+observation:
+  include_metrics: true       # Include game metrics in observation
+  include_minimap: true       # Include minimap in observation
+  include_screenshot: true    # Include screenshot in observation
+  screenshot_width: 224       # Width of screenshot
+  screenshot_height: 224      # Height of screenshot
+  grayscale: false            # Use color screenshots
+  minimap_width: 84           # Width of minimap
+  minimap_height: 84          # Height of minimap
+  normalize_metrics: true     # Normalize metric values
+
+# Vision guidance settings
+vision:
+  enabled: true                    # Enable vision guidance
+  vision_guidance_frequency: 0.3   # Frequency of vision guidance
+  ollama_model: "llava:7b-v1.6-vision"  # Vision model to use
+  ollama_url: "http://localhost:11434/api/generate"  # Ollama API URL
+  response_timeout: 15             # Timeout for vision model responses in seconds
+  max_tokens: 1024                 # Maximum tokens for vision model responses
+  temperature: 0.7                 # Temperature for vision model
+  debug_mode: true                 # Enable debug mode for vision
+  debug_dir: "debug/vision"        # Directory for vision debug output
+
+# Tutorial guidance settings
+tutorial_frequency: 0.7          # How often to check for tutorials
+tutorial_timeout: 300            # Maximum time to spend on a tutorial
+tutorial_reward_multiplier: 2.0  # Reward multiplier for tutorial actions
+
+# Training parameters
+training:
+  total_timesteps: 1000000      # Total number of timesteps
+  n_envs: 1                     # Number of parallel environments
+  n_steps: 2048                 # Number of steps per update
+  batch_size: 64                # Minibatch size
+  n_epochs: 10                  # Number of epochs when optimizing
+  learning_rate: 3.0e-4         # Learning rate
+  gamma: 0.99                   # Discount factor
+  gae_lambda: 0.95              # GAE lambda parameter
+  clip_range: 0.2               # Clipping parameter for PPO
+  ent_coef: 0.01                # Entropy coefficient
+  vf_coef: 0.5                  # Value function coefficient
+  max_grad_norm: 0.5            # Maximum norm for gradient clipping
+  use_sde: false                # Use generalized State Dependent Exploration
+  sde_sample_freq: -1           # Sample a new noise matrix every n steps
+  device: "auto"                # Device to use (cpu, cuda, auto)
+
+# Model architecture
+model:
+  cnn_output_dim: 256           # CNN output dimension
+  mlp_extractor_hidden_sizes: [256, 256]  # MLP extractor hidden sizes
+  net_arch:                     # Network architecture
+    pi: [256, 256]              # Policy network
+    vf: [256, 256]              # Value function network 

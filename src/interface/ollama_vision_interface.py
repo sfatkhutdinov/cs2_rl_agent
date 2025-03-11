@@ -10,6 +10,8 @@ from io import BytesIO
 from PIL import Image
 import json
 import datetime
+import pyautogui
+import random
 
 from .auto_vision_interface import AutoVisionInterface
 
@@ -466,4 +468,169 @@ class OllamaVisionInterface(AutoVisionInterface):
             return traditional_success or len(vision_elements) > 0
         except Exception as e:
             self.logger.error(f"Error in enhanced UI detection: {str(e)}")
-            return traditional_success  # Fall back to traditional result 
+            return traditional_success  # Fall back to traditional result
+    
+    def detect_hover_text(self, x: int, y: int) -> Dict[str, Any]:
+        """
+        Hover over a position and detect any tooltip or hover text.
+        
+        Args:
+            x: X coordinate to hover over
+            y: Y coordinate to hover over
+            
+        Returns:
+            Dictionary with detected hover text information
+        """
+        try:
+            # First capture initial screen
+            initial_screen = self.capture_screen()
+            
+            # Move mouse to the position
+            pyautogui.moveTo(x, y, duration=0.2)
+            
+            # Wait briefly for tooltip to appear
+            time.sleep(0.5)
+            
+            # Capture screen with tooltip
+            hover_screen = self.capture_screen()
+            
+            # Create a hover text detection prompt
+            hover_prompt = """
+            Compare these two screenshots from Cities: Skylines 2. The second image shows the mouse hovering over an element.
+            
+            Identify any tooltip, hover text, or pop-up information that appears in the second image but not the first.
+            
+            Provide your response in JSON format:
+            {
+                "hover_text_detected": true/false,
+                "tooltip_title": "title or heading of the tooltip if any",
+                "tooltip_content": "detailed text content of the tooltip",
+                "ui_element": "name of the UI element being hovered over",
+                "game_mechanic": "what game mechanic this tooltip explains",
+                "suggested_action": "any action suggested by the tooltip"
+            }
+            
+            If no tooltip or hover text is detected, return "hover_text_detected": false.
+            """
+            
+            # Prepare a payload with both images
+            # Convert images to base64
+            initial_rgb = cv2.cvtColor(initial_screen, cv2.COLOR_BGR2RGB)
+            hover_rgb = cv2.cvtColor(hover_screen, cv2.COLOR_BGR2RGB)
+            
+            initial_pil = Image.fromarray(initial_rgb)
+            hover_pil = Image.fromarray(hover_rgb)
+            
+            buffer1 = BytesIO()
+            buffer2 = BytesIO()
+            
+            initial_pil.save(buffer1, format="JPEG", quality=85)
+            hover_pil.save(buffer2, format="JPEG", quality=85)
+            
+            base64_initial = base64.b64encode(buffer1.getvalue()).decode("utf-8")
+            base64_hover = base64.b64encode(buffer2.getvalue()).decode("utf-8")
+            
+            # Create the payload with both images
+            payload = {
+                "model": self.ollama_model,
+                "prompt": hover_prompt,
+                "images": [base64_initial, base64_hover],
+                "stream": False,
+                "options": {
+                    "temperature": self.temperature,
+                    "num_predict": self.max_tokens,
+                }
+            }
+            
+            # Send the request to Ollama
+            timeout = self.ollama_config.get("response_timeout", 30)
+            response = requests.post(
+                self.ollama_url,
+                json=payload,
+                timeout=timeout
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                hover_info = self.extract_json_from_response(result)
+                
+                if "error" not in hover_info:
+                    self.logger.info(f"Hover text detected: {hover_info.get('tooltip_title', 'None')}")
+                    return hover_info
+            
+            return {"hover_text_detected": False}
+            
+        except Exception as e:
+            self.logger.error(f"Error detecting hover text: {str(e)}")
+            return {"hover_text_detected": False}
+            
+    def explore_tooltips(self, regions: List[Tuple[int, int, int, int]] = None) -> List[Dict[str, Any]]:
+        """
+        Systematically explore regions of the screen for tooltips.
+        
+        Args:
+            regions: Optional list of regions to explore, each as (x1, y1, x2, y2)
+                    If None, uses the whole screen divided into a grid
+                    
+        Returns:
+            List of tooltips discovered
+        """
+        # Default to whole screen if no regions provided
+        if regions is None:
+            # Divide screen into a 4x4 grid
+            width = self.screen_region[2] - self.screen_region[0]
+            height = self.screen_region[3] - self.screen_region[1]
+            
+            grid_size = 4
+            regions = []
+            
+            for row in range(grid_size):
+                for col in range(grid_size):
+                    x1 = self.screen_region[0] + (col * width // grid_size)
+                    y1 = self.screen_region[1] + (row * height // grid_size)
+                    x2 = self.screen_region[0] + ((col + 1) * width // grid_size)
+                    y2 = self.screen_region[1] + ((row + 1) * height // grid_size)
+                    regions.append((x1, y1, x2, y2))
+        
+        tooltips = []
+        
+        # For each region, check a few random points
+        for region in regions:
+            x1, y1, x2, y2 = region
+            
+            # Sample 2 random points in this region
+            for _ in range(2):
+                x = random.randint(x1, x2)
+                y = random.randint(y1, y2)
+                
+                # Check for hover text
+                hover_info = self.detect_hover_text(x, y)
+                
+                if hover_info.get("hover_text_detected", False):
+                    # Add coordinates to the info
+                    hover_info["coords"] = (x, y)
+                    tooltips.append(hover_info)
+                    
+                    # Log the tooltip
+                    self.logger.info(f"Found tooltip at ({x}, {y}): {hover_info.get('tooltip_title', 'Unknown')}")
+                    
+                    # Save to our dataset for future reference
+                    self._save_tooltip_data(hover_info)
+        
+        return tooltips
+    
+    def _save_tooltip_data(self, tooltip_info: Dict[str, Any]) -> None:
+        """Save tooltip data to our dataset for future reference."""
+        try:
+            # Create a tooltips file if it doesn't exist
+            tooltips_file = os.path.join(self.debug_dir, "tooltips.jsonl")
+            
+            # Add timestamp 
+            tooltip_info["timestamp"] = datetime.datetime.now().isoformat()
+            
+            # Write to the file
+            with open(tooltips_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(tooltip_info) + "\n")
+                
+        except Exception as e:
+            self.logger.error(f"Error saving tooltip data: {str(e)}") 
