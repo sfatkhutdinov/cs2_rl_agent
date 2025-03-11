@@ -591,23 +591,53 @@ class AutoVisionInterface(BaseInterface):
             interval: Interval between clicks
         """
         try:
+            # Safety check to ensure coordinates are within screen boundaries
+            screen_width = self.screen_region[2]
+            screen_height = self.screen_region[3]
+            
+            # Ensure x and y are within safe boundaries (5% buffer from edges)
+            safe_x = max(screen_width * 0.05, min(x, screen_width * 0.95))
+            safe_y = max(screen_height * 0.05, min(y, screen_height * 0.95))
+            
             # Calculate maximum movement speed to avoid triggering failsafe
             current_x, current_y = pyautogui.position()
-            distance = ((x - current_x) ** 2 + (y - current_y) ** 2) ** 0.5
+            distance = ((safe_x - current_x) ** 2 + (safe_y - current_y) ** 2) ** 0.5
             
-            # If distance is large, use a slower move to prevent triggering failsafe
+            # For extra safety, use intermediate points for very long distances
             if distance > 500:
-                pyautogui.moveTo(x, y, duration=0.3)  # Slower movement for long distances
+                # Move in two steps to avoid diagonal movements across the screen
+                mid_x = current_x + (safe_x - current_x) * 0.5
+                mid_y = current_y + (safe_y - current_y) * 0.5
+                
+                try:
+                    # Move to intermediate point first
+                    pyautogui.moveTo(mid_x, mid_y, duration=0.2)
+                    time.sleep(0.05)  # Short pause
+                    # Then move to final destination
+                    pyautogui.moveTo(safe_x, safe_y, duration=0.2)
+                except Exception as move_error:
+                    self.logger.error(f"Mouse movement failed: {move_error}")
+                    # Try a direct move as fallback with longer duration
+                    pyautogui.moveTo(safe_x, safe_y, duration=0.5)
             elif distance > 200:
-                pyautogui.moveTo(x, y, duration=0.1)  # Medium speed for medium distances
+                pyautogui.moveTo(safe_x, safe_y, duration=0.2)  # Medium speed for medium distances
             else:
-                pyautogui.moveTo(x, y, duration=0.05)  # Faster for short distances
+                pyautogui.moveTo(safe_x, safe_y, duration=0.1)  # Faster for short distances
+            
+            # Add a small pause before clicking to ensure mouse has settled
+            time.sleep(0.05)
                 
             # Perform the click
-            pyautogui.click(x=x, y=y, button=button, clicks=clicks, interval=interval)
+            pyautogui.click(x=safe_x, y=safe_y, button=button, clicks=clicks, interval=interval)
             return True
         except Exception as e:
             self.logger.error(f"Click failed: {e}")
+            # Ensure mouse is moved to a safe position if something goes wrong
+            try:
+                # Move to center of screen as a safe position
+                pyautogui.moveTo(screen_width/2, screen_height/2, duration=0.5)
+            except:
+                pass
             return False
     
     def _click_zone_tool(self, zone_type: str) -> bool:

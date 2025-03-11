@@ -241,6 +241,12 @@ class AutonomousCS2Environment(gym.Wrapper):
         self.total_steps += 1
         self.exploration_counter += 1
         
+        # Safety check for action index
+        if not isinstance(action, (int, np.integer)) or action < 0 or action >= self.action_space.n:
+            self.logger.warning(f"Invalid action index: {action}")
+            # Replace with a random valid action
+            action = np.random.randint(0, self.action_space.n)
+        
         # Sometimes override with exploratory actions if we're in exploration mode
         if np.random.random() < self.exploration_frequency:
             # Instead of purely random exploration, use guided exploration based on city state
@@ -250,7 +256,7 @@ class AutonomousCS2Environment(gym.Wrapper):
             action = self._apply_action_masking(action)
         
         # Process the action
-        if action in self.action_handlers:  # If it's an exploration action
+        if 0 <= action < len(self.action_handlers):  # If it's an exploration action and in valid range
             observation, reward, terminated, truncated, info = self._handle_exploration_action(action)
         else:
             # Use base environment for regular actions
@@ -261,11 +267,11 @@ class AutonomousCS2Environment(gym.Wrapper):
                 self.logger.warning(f"Error executing action {action}: {str(e)}")
                 self.failed_actions += 1
                 # Return previous observation with a small penalty
-                observation = self.last_observation
+                observation = self.last_observation if self.last_observation is not None else self.reset()[0]
                 reward = -0.1
                 terminated = self.last_done
                 truncated = False
-                info = self.last_info.copy()
+                info = self.last_info.copy() if self.last_info is not None else {}
                 info['error'] = str(e)
         
         # Store action history for learning patterns
@@ -436,27 +442,40 @@ class AutonomousCS2Environment(gym.Wrapper):
         self.menu_exploration_counter += 1
         
         # Get current screenshot for exploration
+        screenshot = None
         try:
             screenshot = self.env.interface.capture_screen()
         except Exception as e:
             self.logger.warning(f"Failed to capture screen: {str(e)}")
-            screenshot = None
         
         # Default return values (will be overridden if action succeeds)
-        observation = self.last_observation
+        observation = self.last_observation if self.last_observation is not None else self.reset()[0]
         reward = 0  # Neutral reward by default for exploration
         terminated = False
         truncated = False
-        info = {"exploration_action": self.action_handlers[action].name}
+        info = {}
         
         try:
+            # Check if action index is valid
+            if action < 0 or action >= len(self.action_handlers):
+                self.logger.warning(f"Invalid exploration action index: {action}")
+                return observation, -0.1, terminated, truncated, {"error": "Invalid action index"}
+            
             # Get action handler details
             action_handler = self.action_handlers[action]
             action_name = action_handler.name
             action_type = action_handler.action_type
             
+            # Add action details to info
+            info["exploration_action"] = action_name
+            
             # Execute the action using its action_fn
-            success = action_handler.action_fn()
+            try:
+                success = action_handler.action_fn()
+            except Exception as action_error:
+                self.logger.warning(f"Error executing action {action_name}: {str(action_error)}")
+                success = False
+                info["error"] = str(action_error)
             
             # Update info based on action type
             if action_type == ActionType.CAMERA_CONTROL:
@@ -469,28 +488,27 @@ class AutonomousCS2Environment(gym.Wrapper):
                 info["keyboard_action"] = action_name
             
             # Special actions that need additional handling
-            if action_name == "explore_menu":
+            if action_name == "explore_menu" and success:
                 # Menu explorer might need additional processing beyond what's in action_fn
                 if screenshot is not None and hasattr(self.menu_explorer, 'explore_screen'):
-                    exploration_result = self.menu_explorer.explore_screen(screenshot)
-                    
-                    if "action" in exploration_result and exploration_result["action"] in ["click_menu", "click_submenu", "click_discovered"]:
-                        # Add to discovery buffer if it's a new element
-                        self._update_discovery_buffer(exploration_result)
+                    try:
+                        exploration_result = self.menu_explorer.explore_screen(screenshot)
                         
-                        # Small positive reward for discovering new elements
-                        reward = 0.05
-                        
-                        info["exploration_element"] = exploration_result.get("menu_name", 
-                                                                        exploration_result.get("element_name", "unknown"))
-            
-            elif action_name == "explore_ui":
-                # UI exploration already handled in action_fn
-                pass
-            
-            elif action_name == "random_action":
-                # Already handled in action_fn
-                pass
+                        if isinstance(exploration_result, dict) and "action" in exploration_result:
+                            if exploration_result["action"] in ["click_menu", "click_submenu", "click_discovered"]:
+                                # Add to discovery buffer if it's a new element
+                                self._update_discovery_buffer(exploration_result)
+                                
+                                # Small positive reward for discovering new elements
+                                reward = 0.05
+                                
+                                element_name = exploration_result.get("menu_name", 
+                                                              exploration_result.get("element_name", "unknown"))
+                                if element_name:
+                                    info["exploration_element"] = element_name
+                    except Exception as explore_error:
+                        self.logger.warning(f"Menu exploration error: {str(explore_error)}")
+                        info["menu_error"] = str(explore_error)
             
             # Wait a short time to let the game react
             time.sleep(0.05)
@@ -498,25 +516,36 @@ class AutonomousCS2Environment(gym.Wrapper):
             # Get new observation after action
             try:
                 new_observation = self.env.get_observation()
-                if self._has_observation_changed(new_observation):
+                if new_observation is not None:
                     observation = new_observation
-                    # Small reward for causing an observation change
-                    reward += 0.01
-            except Exception as e:
-                self.logger.warning(f"Failed to get new observation: {str(e)}")
-                
-            # Track action success/failure for future exploration guidance
-            self._update_action_success_rates(action, reward)
-                
-        except Exception as e:
-            self.logger.error(f"Error handling exploration action {action}: {str(e)}")
-            # Set small negative reward for action failure
-            reward = -0.01
-        
-        # Use the last observation if we couldn't get a new one
-        if observation is None:
-            observation = self.last_observation
+            except Exception as obs_error:
+                self.logger.warning(f"Failed to get observation: {str(obs_error)}")
             
+            # Reward meaningful observation changes
+            if self.last_observation is not None and observation is not None:
+                # Check if the observation changed meaningfully
+                # For simple environments, you can compare the observations directly
+                # For more complex ones, you might want to look at specific components
+                try:
+                    if isinstance(observation, dict) and isinstance(self.last_observation, dict):
+                        # For dictionary observations like those from multi-modal environments
+                        if "metrics" in observation and "metrics" in self.last_observation:
+                            metrics_diff = np.sum(np.abs(observation["metrics"] - self.last_observation["metrics"]))
+                            if metrics_diff > 0.1:  # If metrics changed significantly
+                                reward += 0.03  # Small bonus for causing observable changes
+                    elif isinstance(observation, np.ndarray) and isinstance(self.last_observation, np.ndarray):
+                        # For image or vector observations
+                        obs_diff = np.mean(np.abs(observation - self.last_observation))
+                        if obs_diff > 0.1:  # If observation changed significantly
+                            reward += 0.02
+                except Exception as compare_error:
+                    self.logger.debug(f"Error comparing observations: {str(compare_error)}")
+        
+        except Exception as e:
+            self.logger.error(f"Error in exploration action handling: {str(e)}")
+            info["error"] = str(e)
+            reward = -0.1  # Penalty for errors
+        
         return observation, reward, terminated, truncated, info
     
     def _update_discovery_buffer(self, exploration_result):
