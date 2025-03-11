@@ -21,22 +21,29 @@ def make_env(config, seed=0, use_fallback_mode=True):
     Wraps with ObservationWrapper if needed.
     """
     def _init():
-        # Create environment with fallback mode enabled for robustness
-        env = TutorialGuidedCS2Environment(
-            base_env_config=config["environment"],
-            observation_config=config["observation"],
-            vision_config=config.get("vision", {}),
-            tutorial_frequency=config.get("tutorial_frequency", 0.7),
-            tutorial_timeout=config.get("tutorial_timeout", 300),
-            tutorial_reward_multiplier=config.get("tutorial_reward_multiplier", 2.0),
-            use_fallback_mode=use_fallback_mode
-        )
-        
-        # Wrap environment with ObservationWrapper for vector observations
-        env = ObservationWrapper(env)
-        
-        env.seed(seed)
-        return env
+        print("Initializing environment...")
+        try:
+            # Create environment with fallback mode enabled for robustness
+            env = TutorialGuidedCS2Environment(
+                base_env_config=config["environment"],
+                observation_config=config["observation"],
+                vision_config=config.get("vision", {}),
+                tutorial_frequency=config.get("tutorial_frequency", 0.7),
+                tutorial_timeout=config.get("tutorial_timeout", 300),
+                tutorial_reward_multiplier=config.get("tutorial_reward_multiplier", 2.0),
+                use_fallback_mode=use_fallback_mode
+            )
+            
+            print("Environment created successfully!")
+            
+            # Wrap environment with ObservationWrapper for vector observations
+            env = ObservationWrapper(env)
+            
+            env.seed(seed)
+            return env
+        except Exception as e:
+            print(f"Error creating environment: {e}")
+            raise
         
     set_random_seed(seed)
     return _init
@@ -60,22 +67,31 @@ def parse_args():
 
 
 def main():
+    print("Starting tutorial-guided training...")
+    
     # Parse arguments
     args = parse_args()
+    print(f"Using config file: {args.config}")
     
     # Create timestamp for this run
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_name = f"tutorial_guided_{timestamp}"
     
     # Load config
-    with open(args.config, 'r') as f:
-        config = yaml.safe_load(f)
+    try:
+        with open(args.config, 'r') as f:
+            config = yaml.safe_load(f)
+        print("Config loaded successfully")
+    except Exception as e:
+        print(f"Error loading config: {e}")
+        return
     
     # Create directories
     models_dir = os.path.join(args.models_dir, run_name)
     logs_dir = os.path.join(args.logs_dir, run_name)
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(logs_dir, exist_ok=True)
+    print(f"Created directories: {models_dir}, {logs_dir}")
     
     # Save config file to the model directory for reproducibility
     with open(os.path.join(models_dir, 'config.yaml'), 'w') as f:
@@ -84,10 +100,17 @@ def main():
     # Set up training parameters
     total_timesteps = args.total_timesteps or config.get("training", {}).get("total_timesteps", 1000000)
     n_envs = args.n_envs or config.get("training", {}).get("n_envs", 1)
+    print(f"Training for {total_timesteps} timesteps with {n_envs} environments")
     
     # Create vectorized environment
-    env = SubprocVecEnv([make_env(config, i) for i in range(n_envs)])
-    env = VecMonitor(env, os.path.join(logs_dir, "monitor.csv"))
+    print("Creating vectorized environment...")
+    try:
+        env = SubprocVecEnv([make_env(config, i) for i in range(n_envs)])
+        env = VecMonitor(env, os.path.join(logs_dir, "monitor.csv"))
+        print("Vectorized environment created successfully")
+    except Exception as e:
+        print(f"Error creating vectorized environment: {e}")
+        return
     
     # Set up callbacks
     checkpoint_callback = CheckpointCallback(
@@ -166,6 +189,9 @@ def main():
         interrupted_model_path = os.path.join(models_dir, "interrupted_model")
         model.save(interrupted_model_path)
         print(f"Interrupted model saved to {interrupted_model_path}")
+    
+    except Exception as e:
+        print(f"Error during training: {e}")
     
     finally:
         # Close environments

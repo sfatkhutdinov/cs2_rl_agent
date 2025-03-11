@@ -38,13 +38,13 @@ class CS2Environment(gym.Env):
         
         # Create the appropriate interface
         if interface_type == "api":
-            self.interface = APIInterface(config)
+                self.interface = APIInterface(config)
             self.logger.info("Using API interface.")
         elif interface_type == "vision":
-            self.interface = VisionInterface(config)
+                    self.interface = VisionInterface(config)
             self.logger.info("Using vision interface.")
         elif interface_type == "auto_vision":
-            self.interface = AutoVisionInterface(config)
+                self.interface = AutoVisionInterface(config)
             self.logger.info("Using auto vision interface.")
         elif interface_type == "ollama_vision":
             self.interface = OllamaVisionInterface(config)
@@ -66,8 +66,8 @@ class CS2Environment(gym.Env):
                     self.logger.warning("Failed to connect to the game. Using fallback mode.")
                     self._setup_fallback_mode()
                 else:
-                    self.logger.error("Failed to connect to the game.")
-                    raise RuntimeError("Failed to connect to the game.")
+            self.logger.error("Failed to connect to the game.")
+            raise RuntimeError("Failed to connect to the game.")
         except Exception as e:
             if self.use_fallback:
                 self.logger.warning(f"Error connecting to the game: {str(e)}. Using fallback mode.")
@@ -118,13 +118,42 @@ class CS2Environment(gym.Env):
     
     def _setup_observation_space(self):
         """Set up the observation space."""
-        obs_config = self.config["environment"]["observation_space"]
+        # Get the observation space config, with some flexibility to find it
+        obs_config = self.config.get("environment", {}).get("observation_space", {})
+        
+        # If not found, check for observation config at top level
+        if not obs_config and "observation" in self.config:
+            obs_config = self.config.get("observation", {})
+            
+        # Still nothing? Initialize with defaults
+        if not obs_config:
+            self.logger.warning("No observation configuration found. Using defaults.")
+            obs_config = {
+                "include_visual": False,
+                "include_metrics": True,
+                "include_minimap": False,
+                "include_screenshot": True,
+                "screenshot_width": 224,
+                "screenshot_height": 224,
+                "grayscale": False,
+                "minimap_width": 84, 
+                "minimap_height": 84
+            }
+        
         spaces_dict = {}
         
-        # Visual observation
-        if obs_config["include_visual"]:
+        # Visual observation (only if explicitly enabled)
+        include_visual = obs_config.get("include_visual", False)
+        if include_visual:
+            # Try to get image size or use defaults
+            if "image_size" in obs_config:
             height, width = obs_config["image_size"]
-            if obs_config["grayscale"]:
+            else:
+                height = obs_config.get("screenshot_height", 224)
+                width = obs_config.get("screenshot_width", 224)
+                
+            grayscale = obs_config.get("grayscale", False)
+            if grayscale:
                 visual_space = spaces.Box(
                     low=0, high=255, 
                     shape=(height, width, 1),
@@ -638,10 +667,10 @@ class CS2Environment(gym.Env):
                 return self._get_fallback_observation()
             
             # Get the current game state
-            game_state = self.interface.get_game_state()
+        game_state = self.interface.get_game_state()
             
             # Extract observation from game state
-            return self._extract_observation(game_state)
+        return self._extract_observation(game_state)
             
         except Exception as e:
             self.logger.warning(f"Error getting observation: {str(e)}")
@@ -664,7 +693,7 @@ class CS2Environment(gym.Env):
             Dictionary of current game metrics
         """
         game_state = self.interface.get_game_state()
-        return game_state.get("metrics", {})
+        return game_state.get("metrics", {}) 
     
     def _action_to_dict(self, action: int) -> Dict[str, Any]:
         """

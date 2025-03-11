@@ -20,11 +20,78 @@ class VisionGuidedCS2Environment(AutonomousCS2Environment):
     to provide strategic guidance, but relies primarily on direct learning.
     """
     
-    def __init__(self, base_env, exploration_frequency=0.3, random_action_frequency=0.2, 
-                 menu_exploration_buffer_size=50, logger=None):
-        """Initialize the vision-guided environment wrapper."""
+    def __init__(self, 
+                 base_env_config: Dict[str, Any] = None,
+                 observation_config: Dict[str, Any] = None,
+                 vision_config: Dict[str, Any] = None,
+                 use_fallback_mode: bool = True,
+                 exploration_frequency: float = 0.3, 
+                 random_action_frequency: float = 0.2, 
+                 menu_exploration_buffer_size: int = 50, 
+                 logger: Optional[logging.Logger] = None):
+        """
+        Initialize the vision-guided environment.
+        
+        Args:
+            base_env_config: Configuration for the base environment
+            observation_config: Configuration for observations
+            vision_config: Configuration for vision guidance
+            use_fallback_mode: Whether to use fallback mode if game connection fails
+            exploration_frequency: How often to perform exploratory actions
+            random_action_frequency: How often to perform completely random actions
+            menu_exploration_buffer_size: Size of menu exploration buffer
+            logger: Logger instance
+        """
+        # Create a merged configuration
+        base_env_config = base_env_config or {}
+        vision_config = vision_config or {}
+        
+        # Determine the interface type to use
+        interface_type = base_env_config.get("interface_type", "auto_vision")
+        
+        # Make sure we're using a valid interface type
+        if interface_type == "auto":
+            interface_type = "auto_vision"
+            
+        # If we're using vision guidance, prefer the ollama_vision interface
+        if vision_config.get("enabled", True):
+            interface_type = "ollama_vision"
+        
+        config = {
+            "environment": base_env_config,
+            "observation": observation_config or {},
+            "vision": vision_config,
+            "interface": {
+                "type": interface_type,
+                "port": base_env_config.get("interface_port", 8001),
+                "api": {
+                    "host": "localhost",
+                    "port": base_env_config.get("interface_port", 8001),
+                    "timeout": 10
+                },
+                "vision": {
+                    "debug_mode": vision_config.get("debug_mode", False),
+                    "debug_dir": vision_config.get("debug_dir", "debug/vision")
+                },
+                "ollama": {
+                    "model": vision_config.get("ollama_model", "llava:7b-v1.6-vision"),
+                    "url": vision_config.get("ollama_url", "http://localhost:11434/api/generate"),
+                    "response_timeout": vision_config.get("response_timeout", 15),
+                    "max_tokens": vision_config.get("max_tokens", 1024),
+                    "temperature": vision_config.get("temperature", 0.7),
+                    "debug_mode": vision_config.get("debug_mode", False),
+                    "debug_dir": vision_config.get("debug_dir", "debug/vision")
+                }
+            }
+        }
+        
+        # Create the base environment
+        from src.environment.cs2_env import CS2Environment
+        base_env = CS2Environment(config)
+        
+        # Initialize the parent class
         super().__init__(
-            base_env, 
+            base_env=base_env, 
             exploration_frequency=exploration_frequency,
             random_action_frequency=random_action_frequency,
             menu_exploration_buffer_size=menu_exploration_buffer_size,
@@ -34,13 +101,13 @@ class VisionGuidedCS2Environment(AutonomousCS2Environment):
         self.logger = logger or logging.getLogger("VisionGuidedEnv")
         
         # Vision guidance configuration
-        vision_config = self.env.config.get("environment", {}).get("vision_guidance", {})
-        self.vision_guidance_enabled = vision_config.get("enabled", True)
-        self.vision_guidance_frequency = vision_config.get("frequency", 0.1)
-        self.vision_cache_ttl = vision_config.get("cache_ttl", 30)
-        self.min_confidence = vision_config.get("min_confidence", 0.7)
-        self.max_consecutive_attempts = vision_config.get("max_consecutive_attempts", 3)
-        self.background_analysis = vision_config.get("background_analysis", True)
+        self.vision_config = vision_config or {}
+        self.vision_guidance_enabled = self.vision_config.get("enabled", True)
+        self.vision_guidance_frequency = self.vision_config.get("vision_guidance_frequency", 0.3)
+        self.vision_cache_ttl = self.vision_config.get("cache_ttl", 30)
+        self.min_confidence = self.vision_config.get("min_confidence", 0.7)
+        self.max_consecutive_attempts = self.vision_config.get("max_consecutive_attempts", 3)
+        self.background_analysis = self.vision_config.get("background_analysis", True)
         
         # Vision guidance state
         self.vision_guidance_cache = {}
@@ -50,8 +117,11 @@ class VisionGuidedCS2Environment(AutonomousCS2Environment):
         self.vision_update_lock = threading.Lock()
         
         # Setup debugging directory
-        self.debug_dir = os.path.join("logs", "actions_debug")
-        os.makedirs(self.debug_dir, exist_ok=True)
+        self.debug_mode = self.vision_config.get("debug_mode", False)
+        if self.debug_mode:
+            self.debug_dir = self.vision_config.get("debug_dir", "debug/vision")
+            os.makedirs(self.debug_dir, exist_ok=True)
+            self.logger.info(f"Debug mode enabled. Saving to {self.debug_dir}")
         
         # Action tracking log
         self.action_log_file = os.path.join(self.debug_dir, "action_history.jsonl")
@@ -70,6 +140,15 @@ class VisionGuidedCS2Environment(AutonomousCS2Environment):
         
         self.logger.info("Vision-guided environment initialized with extended action space")
         self.logger.info(f"Action debug logs will be saved to: {self.debug_dir}")
+        
+        # Cache for vision model responses
+        self.vision_cache = {}
+        self.last_cache_clear = time.time()
+        
+        # Statistics
+        self.vision_guided_actions = 0
+        self.total_actions = 0
+        self.successful_vision_actions = 0
     
     def _add_vision_guided_actions(self):
         """Add vision-specific guided actions to the action space."""
@@ -411,9 +490,9 @@ class VisionGuidedCS2Environment(AutonomousCS2Environment):
                         success = action.action_fn()
                         
                         # Update statistics
-                        self.vision_guided_actions_taken += 1
+                        self.vision_guided_actions += 1
                         if success:
-                            self.successful_vision_guided_actions += 1
+                            self.successful_vision_actions += 1
                             self.logger.info(f"Successfully followed population advice with action: {action_name}")
                         else:
                             self.logger.warning(f"Failed to follow population advice with action: {action_name}")
@@ -473,9 +552,9 @@ class VisionGuidedCS2Environment(AutonomousCS2Environment):
                         success = action.action_fn()
                         
                         # Update statistics
-                        self.vision_guided_actions_taken += 1
+                        self.vision_guided_actions += 1
                         if success:
-                            self.successful_vision_guided_actions += 1
+                            self.successful_vision_actions += 1
                             self.logger.info(f"Successfully addressed issue with action: {action_name}")
                         else:
                             self.logger.warning(f"Failed to address issue with action: {action_name}")

@@ -20,36 +20,77 @@ class TutorialGuidedCS2Environment(VisionGuidedCS2Environment):
     to learn game mechanics in a structured way.
     """
     
-    def __init__(self, base_env, exploration_frequency=0.2, random_action_frequency=0.1, 
-                 menu_exploration_buffer_size=50, logger=None):
-        """Initialize the tutorial-guided environment wrapper."""
+    def __init__(self, 
+                 base_env_config: Dict[str, Any] = None,
+                 observation_config: Dict[str, Any] = None,
+                 vision_config: Dict[str, Any] = None,
+                 tutorial_frequency: float = 0.7,
+                 tutorial_timeout: int = 300,
+                 tutorial_reward_multiplier: float = 2.0,
+                 use_fallback_mode: bool = True,
+                 exploration_frequency: float = 0.2,
+                 random_action_frequency: float = 0.1,
+                 menu_exploration_buffer_size: int = 50,
+                 logger: Optional[logging.Logger] = None):
+        """
+        Initialize the tutorial-guided environment.
+        
+        Args:
+            base_env_config: Configuration for the base environment
+            observation_config: Configuration for observations
+            vision_config: Configuration for vision guidance
+            tutorial_frequency: How often to check for tutorials (0-1)
+            tutorial_timeout: Maximum time to spend on a tutorial in seconds
+            tutorial_reward_multiplier: Reward multiplier for following tutorials
+            use_fallback_mode: Whether to use fallback mode if game connection fails
+            exploration_frequency: How often to perform exploratory actions
+            random_action_frequency: How often to perform completely random actions
+            menu_exploration_buffer_size: Size of menu exploration buffer
+            logger: Logger instance
+        """
+        # Initialize the parent class with base parameters
         super().__init__(
-            base_env, 
+            base_env_config=base_env_config, 
+            observation_config=observation_config,
+            vision_config=vision_config,
             exploration_frequency=exploration_frequency,
             random_action_frequency=random_action_frequency,
             menu_exploration_buffer_size=menu_exploration_buffer_size,
+            use_fallback_mode=use_fallback_mode,
             logger=logger
         )
         
         self.logger = logger or logging.getLogger("TutorialGuidedEnv")
         
+        # Tutorial-specific settings
+        self.tutorial_frequency = tutorial_frequency
+        self.tutorial_timeout = tutorial_timeout
+        self.tutorial_reward_multiplier = tutorial_reward_multiplier
+        
         # Tutorial tracking
         self.current_tutorial = None
+        self.tutorial_start_time = None
         self.completed_tutorials = set()
+        self.tutorial_progress = 0
         self.tutorial_steps = []
         self.in_tutorial_mode = False
-        self.tutorial_progress = 0
         
-        # Debugging
-        self.debug_dir = os.path.join("logs", "tutorial_debug")
-        os.makedirs(self.debug_dir, exist_ok=True)
-        
-        # Stats
+        # Statistics
         self.tutorial_stats = {
             "tutorials_started": 0,
             "tutorials_completed": 0,
-            "tutorial_steps_completed": 0
+            "tutorial_steps_completed": 0,
+            "tutorial_rewards": 0.0,
         }
+        
+        # Special tutorials to look for at the beginning
+        self.beginner_tutorials = [
+            "moving the camera",
+            "building roads",
+            "zoning",
+            "water and electricity",
+            "basic services"
+        ]
         
         self.logger.info("Tutorial-guided environment initialized")
     

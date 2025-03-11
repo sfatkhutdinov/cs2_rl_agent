@@ -1,95 +1,82 @@
-# Cities: Skylines 2 RL Agent
+# Cities: Skylines 2 Reinforcement Learning Agent
 
-A reinforcement learning agent designed to learn and optimize city management in Cities: Skylines 2.
+This repository contains code for training a reinforcement learning agent to play Cities: Skylines 2 using a discovery-based approach with the Granite 3.2 Vision model for game understanding.
 
-## Project Overview
+## Prerequisites
 
-This project builds a complete reinforcement learning (RL) agent capable of learning to play and manage a city in Cities: Skylines 2. The agent optimizes key urban metrics including:
-- Population growth
-- Citizen satisfaction
-- Financial balance
-- Traffic efficiency
+- Windows 10/11
+- Cities: Skylines 2 installed
+- Python 3.9+ with venv
+- [Ollama](https://ollama.ai/) installed and running
 
-## Architecture
-
-The project is structured into several key components:
-
-1. **Game Interface** - Connects to Cities: Skylines 2 via:
-   - Bridge Mod API integration (primary method)
-   - Computer vision fallback (using screen capture and OCR)
-
-2. **Environment Wrapper** - Formats game state into a standardized RL environment following OpenAI Gym patterns
-
-3. **RL Agent** - Implements state-of-the-art reinforcement learning algorithms (PPO/DQN)
-
-4. **Training Pipeline** - Manages the training process, hyperparameter tuning, and evaluation
-
-## Project Structure
-
-```
-cs2_rl_agent/
-├── bridge_mod/         # C# bridge mod for direct game integration
-├── data/               # Storage for collected game data and datasets
-├── models/             # Saved model checkpoints
-├── logs/               # Training logs and metrics
-├── notebooks/          # Jupyter notebooks for exploration and visualization
-├── src/                # Source code
-│   ├── agent/          # RL algorithm implementations
-│   ├── config/         # Configuration files
-│   ├── environment/    # Game environment wrapper
-│   ├── interface/      # Game interface (API/computer vision)
-│   └── utils/          # Utility functions
-└── tests/              # Unit and integration tests
-```
-
-## Installation
+## Setup
 
 1. Clone this repository
-2. Install the required dependencies:
-```
-pip install -r requirements.txt
-```
-3. Install the bridge mod:
-   - Copy the contents of the `bridge_mod` folder to your Cities: Skylines mods directory
-   - Enable the "RL Agent Bridge" mod in the game's Content Manager
-   - See `bridge_mod/README.md` for detailed installation instructions
+2. Create and activate a virtual environment:
+   ```bash
+   python -m venv venv
+   venv\Scripts\activate
+   ```
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+4. Run the Ollama setup script to ensure the vision model is installed:
+   ```bash
+   setup_ollama.bat
+   ```
 
 ## Usage
 
-### Training the Agent
+### Discovery-Based Training
 
-```
-python -m src.train --config configs/default.yaml
-```
+This mode uses the Granite 3.2 Vision model to autonomously discover and interact with the game's UI elements.
 
-### Evaluating the Agent
+1. Start Cities: Skylines 2 and make sure it's visible on your screen
+2. Run the discovery training script:
+   ```bash
+   train_discovery_with_focus.bat
+   ```
 
-```
-python -m src.evaluate --model models/trained_agent.pt
-```
+The script will:
+- Focus on the game window
+- Detect UI elements using the vision model
+- Attempt to learn game mechanics through exploration
+- Save models to the `models` directory
 
-### Viewing Results
+### Configuration
 
-Training metrics and visualizations can be found in the `logs/` directory.
+The agent's behavior is controlled by configuration files in the `config` directory:
 
-## Game Integration
+- `discovery_config.yaml`: Settings for discovery-based training
+- `tutorial_guided_config.yaml`: Settings for tutorial-guided training
 
-The agent can interact with Cities: Skylines 2 in two ways:
+## Troubleshooting
 
-1. **Bridge Mod (Recommended)**: A C# mod that exposes a REST API for direct game interaction. This provides accurate game state information and precise control.
+### Common Issues
 
-2. **Computer Vision (Fallback)**: Uses screen capture and OCR to interact with the game when the bridge mod is not available. This is less reliable but works without modifying the game.
+- **Window Focus Problems**: If the agent doesn't seem to be interacting with the game, make sure the game window is visible and not minimized.
 
-## Requirements
+- **Ollama Connection**: If you see connection errors, ensure Ollama is running by opening a terminal and typing:
+  ```bash
+  ollama serve
+  ```
 
-- Python 3.8+
-- Cities: Skylines 2
-- CUDA-compatible GPU (recommended for faster training)
+- **Vision Model Issues**: If the vision model isn't working correctly, try reinstalling it manually:
+  ```bash
+  ollama pull granite3.2-vision:latest
+  ```
+
+## Project Structure
+
+- `src/`: Source code
+  - `environment/`: Game environment classes
+  - `agent/`: RL agent implementations
+  - `utils/`: Utility functions
+- `config/`: Configuration files
+- `models/`: Saved model checkpoints
+- `logs/`: Training logs
 
 ## License
 
-MIT License
-
-## Acknowledgements
-
-This project draws inspiration from research in reinforcement learning, urban planning optimization, and game AI. 
+This project is licensed under the MIT License - see the LICENSE file for details. 

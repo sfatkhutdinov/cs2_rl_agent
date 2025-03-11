@@ -1,0 +1,128 @@
+# Configuration for discovery-based RL agent in Cities: Skylines 2
+
+# Discovery settings
+discovery_frequency: 0.4       # How often to try discovering UI elements
+tutorial_frequency: 0.3        # How often to look for tutorials
+random_action_frequency: 0.2   # How often to perform completely random actions
+exploration_randomness: 0.6    # How random exploration should be (0=focused, 1=random)
+
+# Paths for models, logs, and data
+paths:
+  models: "models"
+  logs: "logs"
+  data: "data"
+  debug: "debug"
+
+# Basic environment settings
+environment:
+  type: DiscoveryEnvironment
+  params:
+    render_mode: none
+    headless: false
+    fullscreen: false
+    resolution_width: 1280
+    resolution_height: 720
+    game_path: Auto
+    game_args: []
+    timeout: 600
+    max_episode_steps: 1000
+  observation_type: "dict"     # Use dictionary observation space
+  reward_type: "combined"      # Use combined reward function
+  action_type: "discrete"      # Use discrete action space
+  game_path: ""                # Path to game executable (empty for default)
+  interface_type: "ollama_vision"  # Use Ollama vision interface
+  max_steps: 500               # Maximum steps per episode
+  interface_port: 8001         # Port for game connection
+  use_fallback_mode: true      # Enable fallback mode for robustness
+  reward_shaping:
+    money_weight: 1.0
+    happiness_weight: 2.0
+    population_weight: 1.5
+    growth_weight: 2.0
+    education_weight: 1.0
+    health_weight: 1.0
+    unemployment_penalty: -0.5
+    pollution_penalty: -0.5
+    abandonment_penalty: -2.0
+    bankruptcy_penalty: -5.0
+    discovery_reward: 2.0      # Reward for discovering new UI elements
+    tutorial_progress_reward: 3.0  # Reward for making progress in tutorials
+  
+  # Observation space definition (needed by CS2Environment)
+  observation_space:
+    type: "dict"
+    spaces:
+      metrics:
+        type: "box"
+        shape: [10]
+        low: -1.0
+        high: 1.0
+      minimap:
+        type: "box"
+        shape: [84, 84, 3]
+        low: 0
+        high: 255
+      screenshot:
+        type: "box"
+        shape: [224, 224, 3]
+        low: 0
+        high: 255
+
+# Observation space configuration
+observation:
+  include_metrics: true       # Include game metrics in observation
+  include_minimap: true       # Include minimap in observation
+  include_screenshot: true    # Include screenshot in observation
+  include_visual: true        # Include visual features in observation (required by CS2Environment)
+  screenshot_width: 224       # Width of screenshot
+  screenshot_height: 224      # Height of screenshot
+  grayscale: false            # Use color screenshots
+  minimap_width: 84           # Width of minimap
+  minimap_height: 84          # Height of minimap
+  normalize_metrics: true     # Normalize metric values
+
+# Vision guidance settings
+vision:
+  enabled: true                    # Enable vision guidance
+  vision_guidance_frequency: 0.4   # Frequency of vision guidance
+  ollama_model: "granite3.2-vision:latest"  # Vision model to use
+  ollama_url: "http://localhost:11434/api/generate"  # Ollama API URL
+  response_timeout: 60             # Timeout for vision model responses in seconds (increased from 15 to 60)
+  max_tokens: 1024                 # Maximum tokens for vision model responses
+  temperature: 0.7                 # Temperature for vision model
+  debug_mode: true                 # Enable debug mode for vision
+  debug_dir: "debug/vision"        # Directory for vision debug output
+
+# Training parameters
+training:
+  policy: "MultiInputPolicy"
+  total_timesteps: 1000000
+  n_envs: 1
+  learning_rate: 0.0003
+  n_steps: 2048
+  batch_size: 64
+  n_epochs: 10
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  clip_range_vf: null
+  normalize_advantage: true
+  ent_coef: 0.02               # Higher entropy coefficient to encourage exploration
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  use_sde: false
+  sde_sample_freq: -1
+  target_kl: null
+  device: "auto"
+  save_freq: 50000             # How often to save model checkpoints
+  eval_freq: 10000             # How often to evaluate the model
+  log_interval: 1              # How often to log training stats
+  tb_log_name: "discovery"     # TensorBoard log name
+
+# Policy network configuration
+model:
+  features_extractor_kwargs:
+    features_dim: 512          # Feature dimension for the CNN
+  net_arch:
+    pi: [256, 256]             # Policy network architecture
+    vf: [256, 256]             # Value function network architecture 

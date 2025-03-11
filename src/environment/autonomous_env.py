@@ -11,6 +11,7 @@ from stable_baselines3.common.monitor import Monitor
 import pyautogui
 from enum import Enum, auto
 from collections import namedtuple
+from typing import Dict, Any, Optional, Union, List, Tuple
 
 # Define action types
 class ActionType(Enum):
@@ -28,8 +29,12 @@ class AutonomousCS2Environment(gym.Wrapper):
     capabilities, allowing the agent to fully explore the game on its own.
     """
     
-    def __init__(self, base_env, exploration_frequency=0.3, random_action_frequency=0.2, 
-                 menu_exploration_buffer_size=50, logger=None):
+    def __init__(self, 
+                 base_env: Union[CS2Environment, gym.Env], 
+                 exploration_frequency: float = 0.3, 
+                 random_action_frequency: float = 0.2, 
+                 menu_exploration_buffer_size: int = 50, 
+                 logger: Optional[logging.Logger] = None):
         """
         Initialize the autonomous environment wrapper.
         
@@ -38,45 +43,35 @@ class AutonomousCS2Environment(gym.Wrapper):
             exploration_frequency: How often to trigger exploratory behavior (0-1)
             random_action_frequency: How often to take completely random actions (0-1)
             menu_exploration_buffer_size: Size of the buffer for storing discovered menu items
-            logger: Optional logger instance
+            logger: Logger instance
         """
-        # Ensure base environment is properly initialized
-        if not isinstance(base_env, gym.Env):
-            raise ValueError("base_env must be a gymnasium.Env instance")
-            
         super().__init__(base_env)
-        
-        self.logger = logger or logging.getLogger("AutonomousEnv")
+        self.env = base_env
         self.exploration_frequency = exploration_frequency
         self.random_action_frequency = random_action_frequency
+        self.logger = logger or logging.getLogger("AutonomousEnv")
         
-        # Used for tracking exploration progress
-        self.exploration_counter = 0
-        self.total_steps = 0
-        self.successful_actions = 0
-        self.failed_actions = 0
-        self.menu_exploration_counter = 0
+        # Set up menu explorer
+        if hasattr(base_env, 'interface') and base_env.interface is not None:
+            self.menu_explorer = MenuExplorer(
+                interface=base_env.interface,
+                buffer_size=menu_exploration_buffer_size,
+                logger=self.logger
+            )
+        else:
+            self.logger.warning("No game interface found. Menu exploration will be disabled.")
+            self.menu_explorer = None
         
-        # Create menu explorer
-        self.menu_explorer = MenuExplorer(logger)
+        # Set up action handlers
+        self.action_handlers = []
+        self._setup_action_handlers()
         
-        # Tracking game state for exploration
-        self.last_observation = None
-        self.last_reward = 0
-        self.last_done = False
-        self.last_info = {}
-        
-        # Buffer for storing information about discovered menu items
-        self.menu_discovery_buffer = []
-        self.menu_exploration_buffer_size = menu_exploration_buffer_size
-        
-        # Define a more comprehensive action space to enable autonomous exploration
-        self._extend_action_space()
-        
-        self.logger.info("Autonomous environment initialized with extended action space")
+        # Update the action space
+        self.action_space = spaces.Discrete(len(self.action_handlers))
+        self.logger.info(f"Extended action space from {base_env.action_space.n} to {self.action_space.n} actions")
     
-    def _extend_action_space(self):
-        """Extend the action space with additional control actions"""
+    def _setup_action_handlers(self):
+        """Set up the action handlers for the environment"""
         # Create wrappers for the interface methods
         actions = [
             # Define some basic exploration actions

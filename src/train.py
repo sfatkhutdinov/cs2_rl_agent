@@ -6,10 +6,11 @@ from typing import Dict, Any
 
 import gymnasium as gym
 
-from environment.cs2_env import CS2Environment
-from agent.agent_factory import create_agent, wrap_env_if_needed
-from utils.config_utils import load_config, override_config, get_full_path, save_config
-from utils.logger import Logger
+from src.environment.cs2_env import CS2Environment
+from src.environment.discovery_env import DiscoveryEnvironment
+from src.agent.agent_factory import create_agent, wrap_env_if_needed
+from src.utils.config_utils import load_config, override_config, get_full_path, save_config
+from src.utils.logger import Logger
 
 
 def parse_args():
@@ -47,8 +48,17 @@ def create_environment(config: Dict[str, Any]) -> gym.Env:
     Returns:
         Gym environment
     """
-    # Create the environment
-    env = CS2Environment(config)
+    # Create the environment based on type
+    env_type = config.get("environment", {}).get("type", "CS2Environment")
+    
+    print(f"Creating environment of type: {env_type}")
+    
+    if env_type == "DiscoveryEnvironment":
+        print("Initializing Discovery Environment with config...")
+        env = DiscoveryEnvironment(config)
+    else:
+        print("Initializing CS2Environment with config...")
+        env = CS2Environment(config)
     
     # Wrap the environment if needed
     env = wrap_env_if_needed(env, config)

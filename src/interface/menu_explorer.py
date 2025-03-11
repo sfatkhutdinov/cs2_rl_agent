@@ -15,9 +15,18 @@ class MenuExplorer:
     through the complex menu system of Cities: Skylines 2.
     """
     
-    def __init__(self, logger=None):
-        """Initialize the menu explorer."""
+    def __init__(self, interface=None, buffer_size=50, logger=None):
+        """
+        Initialize the menu explorer.
+        
+        Args:
+            interface: Game interface for interacting with the game
+            buffer_size: Size of buffer for storing menu discovery information
+            logger: Logger instance
+        """
         self.logger = logger or logging.getLogger("MenuExplorer")
+        self.interface = interface
+        self.buffer_size = buffer_size
         
         # Known menu positions (will be discovered through exploration)
         self.menu_positions = {}
@@ -36,6 +45,9 @@ class MenuExplorer:
         self.clicks_since_discovery = 0
         self.exploration_regions = []
         self.exploration_counter = 0
+        
+        # Menu discovery buffer
+        self.menu_discovery_buffer = []
         
         # Define screen regions to explore (will be refined during exploration)
         self._initialize_exploration_regions()
@@ -463,56 +475,73 @@ class MenuExplorer:
         distance = ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
         return distance <= threshold
     
-    def explore_random_menu(self, interface) -> Dict[str, Any]:
+    def explore_random_menu(self) -> bool:
         """
-        Explore a random menu item using the provided interface.
+        Explore a random menu or UI element.
         
-        Args:
-            interface: The game interface to use for interaction
-            
         Returns:
-            Dict with exploration results
+            True if successful, False otherwise
         """
-        # Capture the current screen
+        if not self.interface:
+            self.logger.warning("No interface available for menu exploration")
+            return False
+            
         try:
-            screenshot = interface.capture_screen()
+            # Capture the current screen
+            screen = self.interface.capture_screen()
+            if screen is None:
+                self.logger.warning("Failed to capture screen for menu exploration")
+                return False
+                
+            # Get screen dimensions
+            height, width = screen.shape[:2]
+            
+            # Define exploration regions if not already defined
+            if not self.exploration_regions:
+                # Default to exploring the top and left edges where menus usually are
+                self.exploration_regions = [
+                    (0, 0, width // 3, height // 10),  # Top menu bar
+                    (0, 0, width // 10, height // 2),  # Left sidebar
+                    (width - width // 10, 0, width, height // 2),  # Right sidebar
+                    (0, height - height // 10, width, height)  # Bottom bar
+                ]
+            
+            # Pick a random region to explore
+            region = random.choice(self.exploration_regions)
+            x1, y1, x2, y2 = region
+            
+            # Pick a random point within the region
+            x = random.randint(x1, x2)
+            y = random.randint(y1, y2)
+            
+            # Log the exploration attempt
+            self.logger.info(f"Exploring UI at coordinates ({x}, {y})")
+            
+            # Click at the coordinates
+            if hasattr(self.interface, 'click_at_coordinates'):
+                success = self.interface.click_at_coordinates(x, y)
+            else:
+                # Fallback to pyautogui if interface doesn't support clicking
+                pyautogui.moveTo(x, y, duration=0.2)
+                pyautogui.click()
+                success = True
+            
+            # Track this exploration
+            self.exploration_counter += 1
+            
+            # Add to discovery buffer
+            if len(self.menu_discovery_buffer) >= self.buffer_size:
+                self.menu_discovery_buffer.pop(0)  # Remove oldest entry
+            
+            self.menu_discovery_buffer.append({
+                "coordinates": (x, y),
+                "region": region,
+                "timestamp": time.time(),
+                "success": success
+            })
+            
+            return success
+            
         except Exception as e:
-            self.logger.error(f"Failed to capture screen: {str(e)}")
-            return {"success": False, "error": str(e)}
-            
-        # Explore the screen
-        exploration_result = self.explore_screen(screenshot)
-        
-        # If we found menu items
-        if exploration_result["success"] and exploration_result["menu_items"]:
-            # Pick a random menu item to click
-            menu_item = random.choice(exploration_result["menu_items"])
-            
-            # Click on the menu item
-            click_x, click_y = menu_item["position"]
-            self.logger.info(f"Exploring menu item: {menu_item['name']} at {click_x}, {click_y}")
-            
-            try:
-                success = interface.click_at_coordinates(click_x, click_y)
-                
-                # Update our result
-                exploration_result["clicked_item"] = menu_item["name"]
-                exploration_result["click_success"] = success
-                
-                # Wait a bit for any animations
-                time.sleep(0.5)
-                
-                return exploration_result
-            except Exception as e:
-                self.logger.error(f"Failed to click menu item: {str(e)}")
-                return {"success": False, "error": str(e)}
-        
-        # If we didn't find anything, try clicking the menu button
-        try:
-            self.logger.info("No menu items found, trying to open main menu")
-            interface.perform_action({"type": "menu", "action": "open"})
-            time.sleep(0.5)
-            return {"success": True, "opened_main_menu": True}
-        except Exception as e:
-            self.logger.error(f"Failed to open main menu: {str(e)}")
-            return {"success": False, "error": str(e)} 
+            self.logger.error(f"Error in menu exploration: {str(e)}")
+            return False 
