@@ -534,29 +534,42 @@ class AutonomousCS2Environment(gym.Wrapper):
                             
                             # Make sure we can safely compare the metrics (they should be numpy arrays)
                             if (isinstance(observation["metrics"], np.ndarray) and 
-                                isinstance(self.last_observation["metrics"], np.ndarray)):
-                                metrics_diff = np.sum(np.abs(observation["metrics"] - self.last_observation["metrics"]))
-                                if metrics_diff > 0.1:  # If metrics changed significantly
-                                    reward += 0.03  # Small bonus for causing observable changes
+                                isinstance(self.last_observation["metrics"], np.ndarray) and
+                                observation["metrics"].shape == self.last_observation["metrics"].shape):
+                                try:
+                                    metrics_diff = np.sum(np.abs(observation["metrics"] - self.last_observation["metrics"]))
+                                    if metrics_diff > 0.1:  # If metrics changed significantly
+                                        reward += 0.03  # Small bonus for causing observable changes
+                                except Exception as metrics_error:
+                                    self.logger.debug(f"Error comparing metrics: {str(metrics_error)}")
+                            
                         # Check for individual metrics as well
                         for metric in ["population", "happiness", "budget_balance", "traffic"]:
-                            if (metric in observation and 
-                                metric in self.last_observation and
-                                observation[metric] is not None and 
-                                self.last_observation[metric] is not None):
-                                
-                                metric_diff = np.abs(observation[metric] - self.last_observation[metric]).mean()
-                                if metric_diff > 0.1:
-                                    reward += 0.01  # Smaller bonus for individual metric changes
+                            try:
+                                if (metric in observation and 
+                                    metric in self.last_observation and
+                                    observation[metric] is not None and 
+                                    self.last_observation[metric] is not None):
                                     
-                    elif isinstance(observation, np.ndarray) and isinstance(self.last_observation, np.ndarray):
-                        # For image or vector observations
-                        # Check dimensions and dtype match before comparison
-                        if (observation.shape == self.last_observation.shape and 
-                            observation.dtype == self.last_observation.dtype):
-                            obs_diff = np.mean(np.abs(observation - self.last_observation))
-                            if obs_diff > 0.1:  # If observation changed significantly
-                                reward += 0.02
+                                    # Ensure we're dealing with numpy arrays of compatible shape
+                                    obs_metric = observation[metric]
+                                    last_metric = self.last_observation[metric]
+                                    
+                                    # Convert to numpy arrays if they aren't already
+                                    if not isinstance(obs_metric, np.ndarray):
+                                        obs_metric = np.array(obs_metric)
+                                    if not isinstance(last_metric, np.ndarray):
+                                        last_metric = np.array(last_metric)
+                                    
+                                    # Make sure shapes match before comparison
+                                    if obs_metric.shape == last_metric.shape:
+                                        metric_diff = np.abs(obs_metric - last_metric).mean()
+                                        if metric_diff > 0.1:
+                                            reward += 0.01  # Smaller bonus for individual metric changes
+                                            self.logger.debug(f"Metric {metric} changed: {metric_diff}")
+                            except Exception as metric_error:
+                                self.logger.debug(f"Error comparing metric {metric}: {str(metric_error)}")
+                                continue  # Skip this metric but continue with others
                 except Exception as compare_error:
                     self.logger.debug(f"Error comparing observations: {str(compare_error)}")
                     # Log additional details to help diagnose issues
@@ -565,6 +578,17 @@ class AutonomousCS2Environment(gym.Wrapper):
                             obs_val = observation.get(key)
                             last_val = self.last_observation.get(key)
                             self.logger.debug(f"Key: {key}, Current: {type(obs_val)}, Last: {type(last_val)}")
+                elif isinstance(observation, np.ndarray) and isinstance(self.last_observation, np.ndarray):
+                    # For image or vector observations
+                    # Check dimensions and dtype match before comparison
+                    try:
+                        if (observation.shape == self.last_observation.shape and 
+                            observation.dtype == self.last_observation.dtype):
+                            obs_diff = np.mean(np.abs(observation - self.last_observation))
+                            if obs_diff > 0.1:  # If observation changed significantly
+                                reward += 0.02
+                    except Exception as array_error:
+                        self.logger.debug(f"Error comparing array observations: {str(array_error)}")
         
         except Exception as e:
             self.logger.error(f"Error in exploration action handling: {str(e)}")
@@ -620,32 +644,52 @@ class AutonomousCS2Environment(gym.Wrapper):
         Returns:
             True if observation has changed significantly
         """
-        if self.last_observation is None:
+        if self.last_observation is None or new_observation is None:
             return True
         
-        # For image observations, check if pixels have changed
-        if isinstance(new_observation, np.ndarray) and new_observation.ndim >= 3:
-            # Check if a significant number of pixels have changed
-            if isinstance(self.last_observation, np.ndarray) and self.last_observation.shape == new_observation.shape:
-                diff = np.abs(new_observation - self.last_observation).mean()
-                return diff > 0.05  # Threshold for significant change
-        
-        # For dictionary observations, check components
-        elif isinstance(new_observation, dict) and isinstance(self.last_observation, dict):
-            # Check if visual component has changed
-            if 'visual' in new_observation and 'visual' in self.last_observation:
-                visual_diff = np.abs(new_observation['visual'] - self.last_observation['visual']).mean()
-                if visual_diff > 0.05:
-                    return True
+        try:
+            # For image observations, check if pixels have changed
+            if isinstance(new_observation, np.ndarray) and new_observation.ndim >= 3:
+                # Check if a significant number of pixels have changed
+                if isinstance(self.last_observation, np.ndarray) and self.last_observation.shape == new_observation.shape:
+                    diff = np.abs(new_observation - self.last_observation).mean()
+                    return diff > 0.05  # Threshold for significant change
             
-            # Check if metrics have changed
-            for key in new_observation:
-                if key == 'visual':
-                    continue
-                if key in self.last_observation:
-                    if isinstance(new_observation[key], (int, float)) and isinstance(self.last_observation[key], (int, float)):
-                        if abs(new_observation[key] - self.last_observation[key]) > 0.01:
+            # For dictionary observations, check components
+            elif isinstance(new_observation, dict) and isinstance(self.last_observation, dict):
+                # Check if visual component has changed
+                if ('visual' in new_observation and 'visual' in self.last_observation and
+                    new_observation['visual'] is not None and self.last_observation['visual'] is not None):
+                    
+                    visual_new = new_observation['visual']
+                    visual_last = self.last_observation['visual']
+                    
+                    if (isinstance(visual_new, np.ndarray) and isinstance(visual_last, np.ndarray) and 
+                        visual_new.shape == visual_last.shape):
+                        visual_diff = np.abs(visual_new - visual_last).mean()
+                        if visual_diff > 0.05:
                             return True
+                
+                # Check if metrics have changed
+                for key in new_observation:
+                    if key == 'visual':
+                        continue
+                    
+                    if (key in self.last_observation and 
+                        new_observation[key] is not None and 
+                        self.last_observation[key] is not None):
+                        
+                        if isinstance(new_observation[key], (int, float)) and isinstance(self.last_observation[key], (int, float)):
+                            if abs(new_observation[key] - self.last_observation[key]) > 0.01:
+                                return True
+                        elif isinstance(new_observation[key], np.ndarray) and isinstance(self.last_observation[key], np.ndarray):
+                            if new_observation[key].shape == self.last_observation[key].shape:
+                                diff = np.abs(new_observation[key] - self.last_observation[key]).mean()
+                                if diff > 0.01:
+                                    return True
+        except Exception as e:
+            self.logger.debug(f"Error in _has_observation_changed: {str(e)}")
+            return True  # Assume change on error to be safe
         
         return False 
 
