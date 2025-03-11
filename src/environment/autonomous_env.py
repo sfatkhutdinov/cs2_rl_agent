@@ -231,6 +231,24 @@ class AutonomousCS2Environment(gym.Wrapper):
         self.action_handlers = actions
         self.logger.info(f"Extended action space from {original_size} to {len(actions)} actions")
     
+    def _get_fallback_observation(self):
+        """Create a minimal valid observation when normal observation fails."""
+        # Get the base environment's observation space structure
+        if isinstance(self.env.observation_space, spaces.Dict):
+            observation = {}
+            for key, space in self.env.observation_space.spaces.items():
+                if key == "visual":
+                    observation[key] = np.zeros(space.shape, dtype=space.dtype)
+                elif key in ["population", "happiness", "budget_balance", "traffic"]:
+                    observation[key] = np.array([0], dtype=space.dtype)  # Default values for metrics
+                else:
+                    observation[key] = np.zeros(space.shape, dtype=space.dtype)
+            return observation
+        elif isinstance(self.env.observation_space, spaces.Box):
+            return np.zeros(self.env.observation_space.shape, dtype=self.env.observation_space.dtype)
+        else:
+            return self.env.observation_space.sample()
+
     def reset(self, seed=None, options=None):
         """
         Reset the environment and optionally set the random seed.
@@ -251,13 +269,27 @@ class AutonomousCS2Environment(gym.Wrapper):
         self.exploration_counter = 0
         self.menu_exploration_counter = 0
         
-        # Reset base environment
-        obs, info = self.env.reset()
-        
-        # Reset menu explorer
-        self.menu_explorer.reset()
-        
-        return obs, info
+        try:
+            # Reset base environment
+            obs, info = self.env.reset()
+            
+            # Reset menu explorer
+            self.menu_explorer.reset()
+            
+            # Ensure we have a valid observation
+            if obs is None:
+                obs = self._get_fallback_observation()
+                info["warning"] = "Using fallback observation"
+            
+            # Store as last observation
+            self.last_observation = obs
+            
+            return obs, info
+        except Exception as e:
+            self.logger.error(f"Error in reset: {str(e)}")
+            # Return fallback observation
+            obs = self._get_fallback_observation()
+            return obs, {"error": str(e), "warning": "Using fallback observation"}
     
     def step(self, action):
         """
@@ -272,62 +304,73 @@ class AutonomousCS2Environment(gym.Wrapper):
         self.total_steps += 1
         self.exploration_counter += 1
         
-        # Safety check for action index
-        if not isinstance(action, (int, np.integer)) or action < 0 or action >= self.action_space.n:
-            self.logger.warning(f"Invalid action index: {action}")
-            # Replace with a random valid action
-            action = np.random.randint(0, self.action_space.n)
-        
-        # Sometimes override with exploratory actions if we're in exploration mode
-        if np.random.random() < self.exploration_frequency:
-            # Instead of purely random exploration, use guided exploration based on city state
-            action = self._get_guided_exploratory_action()
-        else:
-            # Check if the action is valid given the current state
-            action = self._apply_action_masking(action)
-        
-        # Process the action
-        if 0 <= action < len(self.action_handlers):  # If it's an exploration action and in valid range
-            observation, reward, terminated, truncated, info = self._handle_exploration_action(action)
-        else:
-            # Use base environment for regular actions
-            try:
-                observation, reward, terminated, truncated, info = self.env.step(action)
-                self.successful_actions += 1
-            except Exception as e:
-                self.logger.warning(f"Error executing action {action}: {str(e)}")
-                self.failed_actions += 1
-                # Return previous observation with a small penalty
-                observation = self.last_observation if self.last_observation is not None else self.reset()[0]
-                reward = -0.1
-                terminated = self.last_done
-                truncated = False
-                info = self.last_info.copy() if self.last_info is not None else {}
-                info['error'] = str(e)
-        
-        # Store action history for learning patterns
-        if not hasattr(self, 'action_history'):
-            self.action_history = []
-        self.action_history.append((action, reward))
-        if len(self.action_history) > 100:  # Keep last 100 actions
-            self.action_history = self.action_history[-100:]
-        
-        # Update success rate for actions to guide future exploration
-        self._update_action_success_rates(action, reward)
-        
-        # Update last state
-        self.last_observation = observation
-        self.last_reward = reward
-        self.last_done = terminated
-        self.last_info = info
-        
-        # Log progress periodically
-        if self.total_steps % 100 == 0:
-            self.logger.info(f"Total steps: {self.total_steps}, "
-                           f"Successful actions: {self.successful_actions}, "
-                           f"Failed actions: {self.failed_actions}")
-        
-        return observation, reward, terminated, truncated, info
+        try:
+            # Safety check for action index
+            if not isinstance(action, (int, np.integer)) or action < 0 or action >= self.action_space.n:
+                self.logger.warning(f"Invalid action index: {action}")
+                # Replace with a random valid action
+                action = np.random.randint(0, self.action_space.n)
+            
+            # Sometimes override with exploratory actions if we're in exploration mode
+            if np.random.random() < self.exploration_frequency:
+                # Instead of purely random exploration, use guided exploration based on city state
+                action = self._get_guided_exploratory_action()
+            else:
+                # Check if the action is valid given the current state
+                action = self._apply_action_masking(action)
+            
+            # Process the action
+            if 0 <= action < len(self.action_handlers):  # If it's an exploration action and in valid range
+                observation, reward, terminated, truncated, info = self._handle_exploration_action(action)
+            else:
+                # Use base environment for regular actions
+                try:
+                    observation, reward, terminated, truncated, info = self.env.step(action)
+                    self.successful_actions += 1
+                except Exception as e:
+                    self.logger.warning(f"Error executing action {action}: {str(e)}")
+                    self.failed_actions += 1
+                    # Return previous observation with a small penalty
+                    observation = self.last_observation if self.last_observation is not None else self._get_fallback_observation()
+                    reward = -0.1
+                    terminated = False
+                    truncated = False
+                    info = {"error": str(e)}
+            
+            # Ensure we have a valid observation
+            if observation is None:
+                observation = self._get_fallback_observation()
+                info["warning"] = "Using fallback observation"
+            
+            # Store action history for learning patterns
+            if not hasattr(self, 'action_history'):
+                self.action_history = []
+            self.action_history.append((action, reward))
+            if len(self.action_history) > 100:  # Keep last 100 actions
+                self.action_history = self.action_history[-100:]
+            
+            # Update success rate for actions to guide future exploration
+            self._update_action_success_rates(action, reward)
+            
+            # Update last state
+            self.last_observation = observation
+            self.last_reward = reward
+            self.last_done = terminated
+            self.last_info = info
+            
+            # Log progress periodically
+            if self.total_steps % 100 == 0:
+                self.logger.info(f"Total steps: {self.total_steps}, "
+                               f"Successful actions: {self.successful_actions}, "
+                               f"Failed actions: {self.failed_actions}")
+            
+            return observation, reward, terminated, truncated, info
+            
+        except Exception as e:
+            self.logger.error(f"Error in step method: {str(e)}")
+            # Return fallback observation with error info
+            observation = self._get_fallback_observation()
+            return observation, -0.1, False, False, {"error": str(e), "warning": "Using fallback observation"}
     
     def _apply_action_masking(self, action):
         """
