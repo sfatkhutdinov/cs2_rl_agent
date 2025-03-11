@@ -7,10 +7,12 @@ seed: 42  # Random seed for reproducibility
 # Interface settings
 interface:
   type: "auto_vision"  # Use the automatic vision interface
-  detection_method: "ocr"  # Use OCR for text detection
-  cache_detections: true  # Cache detected UI elements for faster access
-  ocr_confidence: 0.5  # Lower threshold to detect more potential UI elements
-  template_threshold: 0.6  # Lower threshold for more detection possibilities
+  vision:
+    detection_method: "ocr"  # Use OCR for text detection
+    cache_detections: true  # Cache detected UI elements for faster access
+    ocr_confidence: 0.5  # Lower threshold to detect more potential UI elements
+    template_threshold: 0.6  # Lower threshold for more detection possibilities
+    screen_region: null  # Will be auto-detected based on game window
 
 # Environment settings
 environment:

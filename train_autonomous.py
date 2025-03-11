@@ -52,10 +52,16 @@ def make_env(rank, config, seed=0):
         if interface_type == "auto_vision":
             # Use the automatic vision interface
             interface_config = {
-                "detection_method": config.get("interface", {}).get("detection_method", "ocr"),
-                "ocr_confidence": config.get("interface", {}).get("ocr_confidence", 0.6),
-                "template_threshold": config.get("interface", {}).get("template_threshold", 0.7),
-                "cache_detections": config.get("interface", {}).get("cache_detections", True),
+                "interface": {
+                    "type": "auto_vision",
+                    "vision": {
+                        "detection_method": config.get("interface", {}).get("detection_method", "ocr"),
+                        "ocr_confidence": config.get("interface", {}).get("ocr_confidence", 0.6),
+                        "template_threshold": config.get("interface", {}).get("template_threshold", 0.7),
+                        "cache_detections": config.get("interface", {}).get("cache_detections", True),
+                        "screen_region": None  # Will be auto-detected
+                    }
+                }
             }
             interface = AutoVisionInterface(config=interface_config)
             interface.logger = logger  # Set logger after initialization
