@@ -77,8 +77,8 @@ def make_env(rank, config, seed=0):
                     "type": config.get("environment", {}).get("observation_space", {}).get("type", "combined"),
                     "include_visual": True,  # Enable visual observations
                     "include_metrics": True,  # Enable metric observations
-                    "visual_resolution": [84, 84],  # Observation resolution
-                    "use_grayscale": True,  # Convert to grayscale
+                    "image_size": [84, 84],  # Observation resolution (corrected from visual_resolution)
+                    "grayscale": True,  # Convert to grayscale (corrected from use_grayscale)
                     "normalize_metrics": True,  # Normalize metric values
                     "metrics": config.get("environment", {}).get("metrics", [
                         "population",
