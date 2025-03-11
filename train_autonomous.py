@@ -89,7 +89,32 @@ def make_env(rank, config, seed=0):
                 },
                 "action_space": {
                     "type": config.get("environment", {}).get("action_space", {}).get("type", "advanced"),
-                    "continuous": config.get("environment", {}).get("action_space", {}).get("continuous", False)
+                    "continuous": config.get("environment", {}).get("action_space", {}).get("continuous", False),
+                    "zone": config.get("environment", {}).get("action_space", {}).get("zone", [
+                        "residential",
+                        "commercial", 
+                        "industrial",
+                        "office",
+                        "delete_zone"
+                    ]),
+                    "infrastructure": config.get("environment", {}).get("action_space", {}).get("infrastructure", [
+                        "road",
+                        "power_line",
+                        "water_pipe",
+                        "park",
+                        "service_building", 
+                        "delete_infrastructure"
+                    ]),
+                    "budget": config.get("environment", {}).get("action_space", {}).get("budget", [
+                        "increase_residential_tax",
+                        "decrease_residential_tax", 
+                        "increase_commercial_tax",
+                        "decrease_commercial_tax",
+                        "increase_industrial_tax",
+                        "decrease_industrial_tax",
+                        "increase_service_budget",
+                        "decrease_service_budget"
+                    ])
                 },
                 "reward_function": {
                     "type": config.get("environment", {}).get("reward_function", {}).get("type", "balanced"),

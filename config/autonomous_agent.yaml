@@ -38,6 +38,28 @@ environment:
   action_space:
     type: "advanced"  # Use the advanced action space
     continuous: false  # Use discrete actions
+    zone:  # Zoning action types
+      - "residential"
+      - "commercial"
+      - "industrial"
+      - "office"
+      - "delete_zone"
+    infrastructure:  # Infrastructure action types
+      - "road"
+      - "power_line"
+      - "water_pipe"
+      - "park"
+      - "service_building"
+      - "delete_infrastructure"
+    budget:  # Budget adjustment actions
+      - "increase_residential_tax"
+      - "decrease_residential_tax"
+      - "increase_commercial_tax"
+      - "decrease_commercial_tax"
+      - "increase_industrial_tax"
+      - "decrease_industrial_tax"
+      - "increase_service_budget"
+      - "decrease_service_budget"
     
   reward_function:
     type: "balanced"  # Use a balanced reward function
