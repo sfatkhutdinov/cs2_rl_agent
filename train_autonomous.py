@@ -373,7 +373,6 @@ def train(config_path):
             "weight_decay": 1e-5,  # Slight regularization
         },
         # Enhanced feature extraction for RTX GPU
-        "features_extractor_class": None,  # Will use default but with custom kwargs
         "features_extractor_kwargs": {
             "features_dim": 256,    # Larger feature dimension for better representations
         }
@@ -427,7 +426,7 @@ def train(config_path):
                 policy_kwargs["activation_fn"] = user_policy_kwargs["activation_fn"]
         
         # Copy other kwargs
-        for key in ["ortho_init", "normalize_images", "features_extractor_class"]:
+        for key in ["ortho_init", "normalize_images"]:
             if key in user_policy_kwargs:
                 policy_kwargs[key] = user_policy_kwargs[key]
         
