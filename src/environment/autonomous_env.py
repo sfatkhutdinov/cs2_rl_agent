@@ -664,22 +664,40 @@ class AutonomousCS2Environment(gym.Wrapper):
         Returns:
             True if the action was successful, False otherwise
         """
-        # Choose a random action from the base environment
-        random_action = np.random.randint(0, self.env.action_space.n)
-        
-        # Perform the action using the base environment's step method
         try:
-            observation, reward, terminated, truncated, info = self.env.step(random_action)
+            # Verify the base environment's action space exists
+            if not hasattr(self.env, 'action_space') or self.env.action_space is None:
+                self.logger.error("Base environment action space is not accessible")
+                return False
+                
+            # Get the size of the action space safely
+            action_space_size = getattr(self.env.action_space, 'n', 0)
+            if action_space_size <= 0:
+                self.logger.error("Invalid action space size")
+                return False
             
-            # Track the observation and reward
-            self.last_observation = observation
-            self.last_reward = reward
-            self.last_done = terminated or truncated
-            self.last_info = info
+            # Choose a random action from the base environment
+            random_action = np.random.randint(0, action_space_size)
             
-            return True
-        except Exception as e:
-            self.logger.error(f"Error taking random base action: {e}")
+            # Perform the action using the base environment's step method
+            try:
+                observation, reward, terminated, truncated, info = self.env.step(random_action)
+                
+                # Track the observation and reward (with safety checks)
+                if observation is not None:
+                    self.last_observation = observation
+                if isinstance(reward, (int, float)):
+                    self.last_reward = reward
+                self.last_done = bool(terminated or truncated)
+                if isinstance(info, dict):
+                    self.last_info = info
+                
+                return True
+            except Exception as e:
+                self.logger.error(f"Error taking random base action {random_action}: {e}")
+                return False
+        except Exception as outer_e:
+            self.logger.error(f"Exception in random base action selection: {outer_e}")
             return False
     
     def _repeat_last_action(self):
