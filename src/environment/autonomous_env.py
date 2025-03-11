@@ -521,28 +521,55 @@ class AutonomousCS2Environment(gym.Wrapper):
             except Exception as obs_error:
                 self.logger.warning(f"Failed to get observation: {str(obs_error)}")
             
-            # Reward meaningful observation changes
+            # Reward meaningful observation changes - with robust None checks
             if self.last_observation is not None and observation is not None:
                 # Check if the observation changed meaningfully
-                # For simple environments, you can compare the observations directly
-                # For more complex ones, you might want to look at specific components
                 try:
                     if isinstance(observation, dict) and isinstance(self.last_observation, dict):
-                        # For dictionary observations like those from multi-modal environments
-                        if "metrics" in observation and "metrics" in self.last_observation:
-                            metrics_diff = np.sum(np.abs(observation["metrics"] - self.last_observation["metrics"]))
-                            if metrics_diff > 0.1:  # If metrics changed significantly
-                                reward += 0.03  # Small bonus for causing observable changes
+                        # For dictionary observations from multi-modal environments
+                        if ("metrics" in observation and 
+                            "metrics" in self.last_observation and
+                            observation["metrics"] is not None and
+                            self.last_observation["metrics"] is not None):
+                            
+                            # Make sure we can safely compare the metrics (they should be numpy arrays)
+                            if (isinstance(observation["metrics"], np.ndarray) and 
+                                isinstance(self.last_observation["metrics"], np.ndarray)):
+                                metrics_diff = np.sum(np.abs(observation["metrics"] - self.last_observation["metrics"]))
+                                if metrics_diff > 0.1:  # If metrics changed significantly
+                                    reward += 0.03  # Small bonus for causing observable changes
+                        # Check for individual metrics as well
+                        for metric in ["population", "happiness", "budget_balance", "traffic"]:
+                            if (metric in observation and 
+                                metric in self.last_observation and
+                                observation[metric] is not None and 
+                                self.last_observation[metric] is not None):
+                                
+                                metric_diff = np.abs(observation[metric] - self.last_observation[metric]).mean()
+                                if metric_diff > 0.1:
+                                    reward += 0.01  # Smaller bonus for individual metric changes
+                                    
                     elif isinstance(observation, np.ndarray) and isinstance(self.last_observation, np.ndarray):
                         # For image or vector observations
-                        obs_diff = np.mean(np.abs(observation - self.last_observation))
-                        if obs_diff > 0.1:  # If observation changed significantly
-                            reward += 0.02
+                        # Check dimensions and dtype match before comparison
+                        if (observation.shape == self.last_observation.shape and 
+                            observation.dtype == self.last_observation.dtype):
+                            obs_diff = np.mean(np.abs(observation - self.last_observation))
+                            if obs_diff > 0.1:  # If observation changed significantly
+                                reward += 0.02
                 except Exception as compare_error:
                     self.logger.debug(f"Error comparing observations: {str(compare_error)}")
+                    # Log additional details to help diagnose issues
+                    if isinstance(observation, dict) and isinstance(self.last_observation, dict):
+                        for key in set(observation.keys()).union(set(self.last_observation.keys())):
+                            obs_val = observation.get(key)
+                            last_val = self.last_observation.get(key)
+                            self.logger.debug(f"Key: {key}, Current: {type(obs_val)}, Last: {type(last_val)}")
         
         except Exception as e:
             self.logger.error(f"Error in exploration action handling: {str(e)}")
+            import traceback
+            self.logger.debug(f"Traceback: {traceback.format_exc()}")
             info["error"] = str(e)
             reward = -0.1  # Penalty for errors
         
