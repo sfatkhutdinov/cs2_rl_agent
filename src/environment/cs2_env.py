@@ -8,6 +8,7 @@ import logging
 from ..interface.base_interface import BaseInterface
 from ..interface.vision_interface import VisionInterface
 from ..interface.api_interface import APIInterface
+from ..interface.auto_vision_interface import AutoVisionInterface
 
 
 class CS2Environment(gym.Env):
@@ -40,6 +41,13 @@ class CS2Environment(gym.Env):
                     self.interface = VisionInterface(config)
             except Exception as e:
                 self.logger.warning(f"Error initializing API interface: {str(e)}. Falling back to vision interface.")
+                self.interface = VisionInterface(config)
+        elif interface_type == "auto_vision":
+            try:
+                self.logger.info("Using auto-detection vision interface.")
+                self.interface = AutoVisionInterface(config)
+            except Exception as e:
+                self.logger.warning(f"Error initializing auto-detection interface: {str(e)}. Falling back to standard vision interface.")
                 self.interface = VisionInterface(config)
         else:
             self.interface = VisionInterface(config)
