@@ -13,6 +13,7 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv, VecTransposeImage
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.evaluation import evaluate_policy
+import gym
 
 from src.environment.cs2_env import CS2Environment
 from src.environment.autonomous_env import AutonomousCS2Environment
@@ -372,11 +373,26 @@ def train(config_path):
             "eps": 1e-5,           # Prevent division by zero
             "weight_decay": 1e-5,  # Slight regularization
         },
-        # Enhanced feature extraction for RTX GPU
+        # Enhanced feature extraction for combined observation spaces
         "features_extractor_kwargs": {
-            "features_dim": 256,    # Larger feature dimension for better representations
+            "cnn_output_dim": 256,  # Dimension for CNN output (for visual part)
+            "mlp_extractor_net_arch": [128, 64]  # Architecture for MLP extracting features from numerical data
         }
     }
+    
+    # Determine observation space type to adjust feature extractor parameters
+    env_temp = env
+    while hasattr(env_temp, "env"):
+        env_temp = env_temp.env
+        if hasattr(env_temp, "observation_space"):
+            break
+    
+    # If the observation space is not a Dict, modify the kwargs to use features_dim instead
+    if not isinstance(env_temp.observation_space, gym.spaces.Dict):
+        logger.info("Using box observation space, adjusting feature extractor parameters")
+        policy_kwargs["features_extractor_kwargs"] = {
+            "features_dim": 256  # Only use features_dim for non-Dict observation spaces
+        }
     
     # Set CUDA optimizations for better performance
     if torch.cuda.is_available():
