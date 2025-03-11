@@ -19,9 +19,7 @@ environment:
   type: "cs2"  # Environment type identifier
   observation_space:
     type: "combined"  # Use both visual and metric observations
-    include_visual: true  # Enable visual observations
-    include_metrics: true  # Enable metric observations
-    visual_resolution: [84, 84]  # Observation resolution
+    image_size: [84, 84]  # Observation resolution (renamed from visual_resolution)
     use_grayscale: true  # Convert to grayscale
     normalize_metrics: true  # Normalize metric values
     metrics:  # List of metrics to track
