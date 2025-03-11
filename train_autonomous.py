@@ -75,15 +75,17 @@ def make_env(rank, config, seed=0):
                 "type": config.get("environment", {}).get("type", "cs2"),
                 "observation_space": {
                     "type": config.get("environment", {}).get("observation_space", {}).get("type", "combined"),
-                    "visual": config.get("environment", {}).get("observation_space", {}).get("visual", {
-                        "enabled": True,
-                        "resolution": [84, 84],
-                        "grayscale": True
-                    }),
-                    "metrics": config.get("environment", {}).get("observation_space", {}).get("metrics", {
-                        "enabled": True,
-                        "normalize": True
-                    })
+                    "include_visual": True,  # Enable visual observations
+                    "include_metrics": True,  # Enable metric observations
+                    "visual_resolution": [84, 84],  # Observation resolution
+                    "use_grayscale": True,  # Convert to grayscale
+                    "normalize_metrics": True,  # Normalize metric values
+                    "metrics": config.get("environment", {}).get("metrics", [
+                        "population",
+                        "happiness",
+                        "budget_balance",
+                        "traffic"
+                    ])
                 },
                 "action_space": {
                     "type": config.get("environment", {}).get("action_space", {}).get("type", "advanced"),
@@ -101,13 +103,7 @@ def make_env(rank, config, seed=0):
                 },
                 "max_episode_steps": config.get("environment", {}).get("max_episode_steps", 2000),
                 "metrics_update_freq": config.get("environment", {}).get("metrics_update_freq", 10),
-                "pause_on_menu": config.get("environment", {}).get("pause_on_menu", False),
-                "metrics": config.get("environment", {}).get("metrics", [
-                    "population",
-                    "happiness",
-                    "budget_balance",
-                    "traffic"
-                ])
+                "pause_on_menu": config.get("environment", {}).get("pause_on_menu", False)
             }
         }
         

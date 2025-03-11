@@ -19,13 +19,22 @@ environment:
   type: "cs2"  # Environment type identifier
   observation_space:
     type: "combined"  # Use both visual and metric observations
-    visual:
-      enabled: true
-      resolution: [84, 84]  # Observation resolution
-      grayscale: true  # Convert to grayscale to reduce dimensionality
-    metrics:
-      enabled: true
-      normalize: true  # Normalize metric values
+    include_visual: true  # Enable visual observations
+    include_metrics: true  # Enable metric observations
+    visual_resolution: [84, 84]  # Observation resolution
+    use_grayscale: true  # Convert to grayscale
+    normalize_metrics: true  # Normalize metric values
+    metrics:  # List of metrics to track
+      - "population"
+      - "happiness"
+      - "unemployment"
+      - "education"
+      - "health"
+      - "pollution"
+      - "traffic"
+      - "budget_balance"
+      - "tax_income"
+      - "land_value"
   
   action_space:
     type: "advanced"  # Use the advanced action space
