@@ -706,9 +706,15 @@ class AutoVisionInterface(BaseInterface):
             return False
         
         try:
+            # Try to pause the game first
+            self._click_pause_button()
+            time.sleep(0.5)
+            
             # First try to find menu button through detection
             menu_clicked = False
             
+            # Try OCR detection first
+            self.detect_ui_elements()
             if "menu_button" in self.ui_element_cache:
                 region = self.ui_element_cache["menu_button"]["region"]
                 center_x = (region[0] + region[2]) // 2
@@ -717,20 +723,49 @@ class AutoVisionInterface(BaseInterface):
                 menu_clicked = True
             
             if not menu_clicked:
-                # Fallback to top-left corner
+                # Try ESC key first
+                pyautogui.press('esc')
+                time.sleep(0.5)
+                
+                # Then try clicking top-left corner as fallback
                 pyautogui.click(20, 20)
             
             time.sleep(1)  # Wait for menu to open
             
-            # Look for "New Game" button
-            # For now, use a common position
-            screen_width = self.screen_region[2]
-            screen_height = self.screen_region[3]
+            # Look for "New Game" button using OCR
+            screenshot = self.capture_screen()
+            text = pytesseract.image_to_string(screenshot)
             
-            # Click where "New Game" is typically located
-            pyautogui.click(screen_width * 0.2, screen_height * 0.3)
+            new_game_clicked = False
+            if "new game" in text.lower():
+                # Try to find and click "New Game" text location
+                data = pytesseract.image_to_data(screenshot, output_type=pytesseract.Output.DICT)
+                for i, word in enumerate(data['text']):
+                    if 'new game' in word.lower():
+                        x = data['left'][i]
+                        y = data['top'][i]
+                        pyautogui.click(x + self.screen_region[0], y + self.screen_region[1])
+                        new_game_clicked = True
+                        break
             
-            time.sleep(5)  # Wait for the game to load
+            if not new_game_clicked:
+                # Fallback to common positions
+                screen_width = self.screen_region[2]
+                screen_height = self.screen_region[3]
+                
+                # Try a few common positions for the "New Game" button
+                positions = [
+                    (0.2, 0.3),  # Common position 1
+                    (0.2, 0.4),  # Common position 2
+                    (0.3, 0.3)   # Common position 3
+                ]
+                
+                for x_ratio, y_ratio in positions:
+                    pyautogui.click(int(screen_width * x_ratio), int(screen_height * y_ratio))
+                    time.sleep(0.5)
+            
+            # Wait for the game to load and stabilize
+            time.sleep(7)  # Increased wait time for game load
             
             # Reset internal state
             self.last_metrics = {}
@@ -738,8 +773,45 @@ class AutoVisionInterface(BaseInterface):
             self.ui_element_cache = {}
             self.cache_timestamp = 0
             
-            return True
+            # Try to detect UI elements to confirm we're in game
+            if self.detect_ui_elements():
+                self.logger.info("Game reset successful - UI elements detected")
+                return True
+            else:
+                self.logger.warning("Game reset may have failed - no UI elements detected")
+                return False
             
         except Exception as e:
             self.logger.error(f"Failed to reset game: {str(e)}")
+            return False
+    
+    def reset(self) -> bool:
+        """
+        Reset the interface state and game to initial conditions.
+        
+        Returns:
+            bool: True if reset was successful, False otherwise
+        """
+        try:
+            # Reset internal state
+            self.last_screenshot = None
+            self.last_metrics = {}
+            self.cached_ui_elements = {}
+            
+            # Reset game state
+            success = self.reset_game()
+            if not success:
+                self.logger.warning("Failed to reset game state")
+                return False
+            
+            # Wait for game to stabilize
+            time.sleep(1.0)
+            
+            # Re-detect UI elements
+            self.detect_ui_elements()
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error during interface reset: {str(e)}")
             return False 
