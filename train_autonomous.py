@@ -68,17 +68,20 @@ def make_env(rank, config, seed=0):
         else:
             raise ValueError(f"Unknown interface type: {interface_type}")
             
+        # Create base environment configuration
+        env_config = {
+            "interface": interface_config["interface"],  # Pass the same interface config
+            "observation_space": config.get("environment", {}).get("observation_space", "visual"),
+            "action_space": config.get("environment", {}).get("action_space", "basic"),
+            "reward_function": config.get("environment", {}).get("reward_function", "population"),
+            "max_episode_steps": config.get("environment", {}).get("max_episode_steps", 1000),
+            "metrics_update_freq": config.get("environment", {}).get("metrics_update_freq", 10),
+            "pause_on_menu": config.get("environment", {}).get("pause_on_menu", True)
+        }
+        
         # Create base environment
-        base_env = CS2Environment(
-            interface=interface,
-            observation_space_type=config.get("environment", {}).get("observation_space", "visual"),
-            action_space_type=config.get("environment", {}).get("action_space", "basic"),
-            reward_function=config.get("environment", {}).get("reward_function", "population"),
-            max_episode_steps=config.get("environment", {}).get("max_episode_steps", 1000),
-            metrics_update_freq=config.get("environment", {}).get("metrics_update_freq", 10),
-            pause_on_menu=config.get("environment", {}).get("pause_on_menu", True),
-            logger=logger
-        )
+        base_env = CS2Environment(config=env_config)
+        base_env.logger = logger  # Set logger after initialization
         
         # Wrap with autonomous environment
         env = AutonomousCS2Environment(
