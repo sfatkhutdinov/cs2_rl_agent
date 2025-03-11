@@ -315,6 +315,38 @@ class CS2Environment(gym.Env):
                 height, width = obs_config["image_size"]
                 channels = 1 if obs_config["grayscale"] else 3
                 visual_obs = np.zeros((height, width, channels), dtype=np.uint8)
+            else:
+                # Ensure correct number of channels (convert RGBA to RGB if needed)
+                if len(visual_obs.shape) == 3 and visual_obs.shape[2] == 4:
+                    # Convert RGBA to RGB by discarding the alpha channel
+                    self.logger.debug("Converting RGBA image to RGB")
+                    visual_obs = visual_obs[:, :, :3]
+                
+                # Ensure correct image size
+                target_height, target_width = obs_config["image_size"]
+                if visual_obs.shape[0] != target_height or visual_obs.shape[1] != target_width:
+                    # Resize the image if needed
+                    try:
+                        import cv2
+                        visual_obs = cv2.resize(visual_obs, (target_width, target_height))
+                    except ImportError:
+                        # Fallback to simple resizing if OpenCV is not available
+                        from skimage.transform import resize
+                        visual_obs = resize(visual_obs, (target_height, target_width), 
+                                         anti_aliasing=True, preserve_range=True).astype(np.uint8)
+                
+                # Convert to grayscale if configured
+                if obs_config["grayscale"] and len(visual_obs.shape) == 3 and visual_obs.shape[2] > 1:
+                    if visual_obs.shape[2] == 3:  # RGB
+                        # Use standard RGB to grayscale conversion
+                        visual_obs = np.dot(visual_obs[..., :3], [0.2989, 0.5870, 0.1140])
+                    elif visual_obs.shape[2] == 4:  # RGBA
+                        # Convert to grayscale ignoring alpha
+                        visual_obs = np.dot(visual_obs[..., :3], [0.2989, 0.5870, 0.1140])
+                    
+                    # Reshape to have a single channel
+                    visual_obs = visual_obs.reshape(visual_obs.shape[0], visual_obs.shape[1], 1)
+            
             observation["visual"] = visual_obs
         
         # Metrics observation
