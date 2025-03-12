@@ -9,7 +9,32 @@ import logging
 import os
 import win32gui
 from .base_interface import BaseInterface
+import requests
+import base64
+from io import BytesIO
+from PIL import Image
+import json
+import datetime
+import random
+import hashlib
+import io
+from collections import OrderedDict
+import threading
+import sys
 
+# Add the path to our input enhancer
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from input_enhancer import InputEnhancer
+
+# Try to import pytesseract but don't fail if it's not available
+try:
+    import pytesseract
+    TESSERACT_AVAILABLE = True
+except ImportError:
+    TESSERACT_AVAILABLE = False
+    logging.warning("pytesseract not available. OCR features will be disabled.")
+
+logger = logging.getLogger(__name__)
 
 class AutoVisionInterface(BaseInterface):
     """
@@ -28,6 +53,9 @@ class AutoVisionInterface(BaseInterface):
         """
         super().__init__(config)
         self.logger = logging.getLogger("AutoVisionInterface")
+        
+        # Initialize the input enhancer for more reliable interactions
+        self.input_enhancer = InputEnhancer()
         
         # Game window handle
         self.game_window_handle = config.get("game_window_handle", None)
@@ -412,89 +440,68 @@ class AutoVisionInterface(BaseInterface):
         return detected
     
     def _detect_ui_elements_ocr(self) -> bool:
-        """Detect UI elements using OCR."""
-        # Convert to grayscale for better OCR
-        gray = cv2.cvtColor(self.last_screenshot, cv2.COLOR_BGR2GRAY)
+        """
+        Detect UI elements using OCR.
         
-        # Run OCR on the entire screen
+        Returns:
+            True if any UI elements were detected, False otherwise
+        """
+        # Skip if pytesseract is not available
+        if not TESSERACT_AVAILABLE:
+            self.logger.debug("OCR detection skipped - pytesseract not available")
+            return False
+            
         try:
-            data = pytesseract.image_to_data(gray, output_type=pytesseract.Output.DICT)
-            
-            # Look for key UI labels
-            ui_labels = {
-                "population": ["population", "pop", "residents"],
-                "happiness": ["happiness", "happy", "satisfaction"],
-                "budget": ["budget", "money", "cash", "funds"],
-                "traffic": ["traffic", "flow"]
-            }
-            
-            detected = False
-            
-            for i, text in enumerate(data["text"]):
-                if not text.strip():
-                    continue
+            # Capture the screen if we don't have a recent screenshot
+            if self.last_screenshot is None or time.time() - self.last_screenshot_time > self.screenshot_expiry:
+                self.last_screenshot = self.capture_screen()
+                self.last_screenshot_time = time.time()
                 
-                # Check if this text matches any UI labels
-                for element, possible_labels in ui_labels.items():
-                    if any(label.lower() in text.lower() for label in possible_labels):
-                        # Found a UI element
-                        x = data["left"][i]
-                        y = data["top"][i]
-                        w = data["width"][i]
-                        h = data["height"][i]
-                        
-                        # Store the element region
-                        self.ui_element_cache[element] = {
-                            "region": (x, y, x + w, y + h),
-                            "confidence": data["conf"][i] / 100
-                        }
-                        
-                        # For metrics, also detect the value area (to the right of the label)
-                        value_region = (
-                            x + w, y,
-                            x + w + 100, y + h  # Assume value is within 100px to the right
-                        )
-                        self.ui_element_cache[f"{element}_value"] = {
-                            "region": value_region,
-                            "confidence": data["conf"][i] / 100
-                        }
-                        
-                        detected = True
-                        break
-            
-            # Look for common UI buttons
-            button_labels = {
-                "play": ["play", "resume"],
-                "pause": ["pause"],
-                "speed": ["speed", "1x", "2x", "3x"]
-            }
-            
-            for i, text in enumerate(data["text"]):
-                if not text.strip():
-                    continue
+            if self.last_screenshot is None:
+                self.logger.warning("No screenshot available for OCR detection")
+                return False
                 
-                # Check if this text matches any button labels
-                for button, possible_labels in button_labels.items():
-                    if any(label.lower() in text.lower() for label in possible_labels):
-                        # Found a button
-                        x = data["left"][i]
-                        y = data["top"][i]
-                        w = data["width"][i]
-                        h = data["height"][i]
+            # Convert to grayscale for better OCR
+            gray = cv2.cvtColor(self.last_screenshot, cv2.COLOR_BGR2GRAY)
+            
+            # Apply some preprocessing to improve OCR
+            # Adjust these parameters based on the game's UI
+            _, binary = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
+            
+            # Use pytesseract to extract text
+            try:
+                data = pytesseract.image_to_data(gray, output_type=pytesseract.Output.DICT)
+            except Exception as e:
+                self.logger.error(f"OCR error: {str(e)}")
+                return False
+                
+            # Extract text regions
+            n_boxes = len(data['text'])
+            elements_detected = False
+            
+            for i in range(n_boxes):
+                if int(data['conf'][i]) > 60:  # Confidence threshold
+                    text = data['text'][i].strip()
+                    if len(text) > 2:  # Ignore very short text
+                        x = data['left'][i]
+                        y = data['top'][i]
+                        w = data['width'][i]
+                        h = data['height'][i]
                         
-                        # Store the button region
-                        self.ui_element_cache[f"{button}_button"] = {
-                            "region": (x, y, x + w, y + h),
-                            "confidence": data["conf"][i] / 100
+                        # Store in UI element cache
+                        element_name = f"text_{text.lower().replace(' ', '_')}"
+                        self.ui_element_cache[element_name] = {
+                            "position": (x + w//2, y + h//2),
+                            "size": (w, h),
+                            "text": text,
+                            "detected_by": "ocr"
                         }
+                        elements_detected = True
                         
-                        detected = True
-                        break
-            
-            return detected
-            
+            return elements_detected
+        
         except Exception as e:
-            self.logger.error(f"OCR failed: {str(e)}")
+            self.logger.error(f"Exception in OCR detection: {str(e)}")
             return False
     
     def extract_metrics_from_regions(self) -> Dict[str, float]:
@@ -688,43 +695,19 @@ class AutoVisionInterface(BaseInterface):
             safe_x = max(screen_width * 0.05, min(x, screen_width * 0.95))
             safe_y = max(screen_height * 0.05, min(y, screen_height * 0.95))
             
-            # Calculate maximum movement speed to avoid triggering failsafe
-            current_x, current_y = pyautogui.position()
-            distance = ((safe_x - current_x) ** 2 + (safe_y - current_y) ** 2) ** 0.5
+            # Use our enhanced input system for more reliable clicks
+            self.input_enhancer.click(x=safe_x, y=safe_y, button=button, clicks=clicks, interval=interval)
             
-            # For extra safety, use intermediate points for very long distances
-            if distance > 500:
-                # Move in two steps to avoid diagonal movements across the screen
-                mid_x = current_x + (safe_x - current_x) * 0.5
-                mid_y = current_y + (safe_y - current_y) * 0.5
-                
-                try:
-                    # Move to intermediate point first
-                    pyautogui.moveTo(mid_x, mid_y, duration=0.2)
-                    time.sleep(0.05)  # Short pause
-                    # Then move to final destination
-                    pyautogui.moveTo(safe_x, safe_y, duration=0.2)
-                except Exception as move_error:
-                    self.logger.error(f"Mouse movement failed: {move_error}")
-                    # Try a direct move as fallback with longer duration
-                    pyautogui.moveTo(safe_x, safe_y, duration=0.5)
-            elif distance > 200:
-                pyautogui.moveTo(safe_x, safe_y, duration=0.2)  # Medium speed for medium distances
-            else:
-                pyautogui.moveTo(safe_x, safe_y, duration=0.1)  # Faster for short distances
+            # Wait after action to ensure game has time to register it
+            self.input_enhancer.wait_after_action(min_wait=0.3, max_wait=0.5)
             
-            # Add a small pause before clicking to ensure mouse has settled
-            time.sleep(0.05)
-                
-            # Perform the click
-            pyautogui.click(x=safe_x, y=safe_y, button=button, clicks=clicks, interval=interval)
             return True
         except Exception as e:
             self.logger.error(f"Click failed: {e}")
             # Ensure mouse is moved to a safe position if something goes wrong
             try:
                 # Move to center of screen as a safe position
-                pyautogui.moveTo(screen_width/2, screen_height/2, duration=0.5)
+                self.input_enhancer.move_to(screen_width/2, screen_height/2)
             except:
                 pass
             return False
@@ -1025,49 +1008,33 @@ class AutoVisionInterface(BaseInterface):
     
     def press_key(self, key):
         """
-        Presses a keyboard key.
+        Press a key on the keyboard.
         
         Args:
             key: Key to press
-            
-        Returns:
-            True if successful, False otherwise
         """
         try:
-            # Disallow ESC and Function keys for safety
-            if key in ['esc', 'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9', 'f10', 'f11', 'f12']:
-                self.logger.warning(f"Blocked pressing of restricted key: {key}")
-                return False
-                
-            pyautogui.press(key)
-            self.logger.debug(f"Pressed key: {key}")
+            # Use our enhanced input system
+            self.input_enhancer.press_key(key)
             return True
         except Exception as e:
-            self.logger.error(f"Failed to press key {key}: {e}")
+            self.logger.error(f"Key press failed: {e}")
             return False
             
     def press_hotkey(self, modifier, key):
         """
-        Presses a hotkey combination (modifier + key).
+        Press a hotkey combination.
         
         Args:
-            modifier: Modifier key ('ctrl', 'shift', 'alt')
-            key: Regular key
-            
-        Returns:
-            True if successful, False otherwise
+            modifier: Modifier key (shift, ctrl, alt)
+            key: Main key
         """
         try:
-            # Block dangerous combinations
-            if modifier == 'alt' and key == 'f4':
-                self.logger.warning("Blocked pressing of restricted hotkey: alt+f4")
-                return False
-                
-            pyautogui.hotkey(modifier, key)
-            self.logger.debug(f"Pressed hotkey: {modifier}+{key}")
+            # Use our enhanced input system
+            self.input_enhancer.hotkey(modifier, key)
             return True
         except Exception as e:
-            self.logger.error(f"Failed to press hotkey {modifier}+{key}: {e}")
+            self.logger.error(f"Hotkey press failed: {e}")
             return False
             
     def rotate_camera_left(self):
@@ -1171,29 +1138,22 @@ class AutoVisionInterface(BaseInterface):
     
     def drag_mouse(self, start_x, start_y, end_x, end_y, duration=0.2):
         """
-        Drag the mouse from one position to another (pan the view).
+        Drag the mouse from one position to another.
         
         Args:
-            start_x, start_y: Starting coordinates
-            end_x, end_y: Ending coordinates
-            duration: How long the drag should take
+            start_x: Starting X coordinate
+            start_y: Starting Y coordinate
+            end_x: Ending X coordinate
+            end_y: Ending Y coordinate
+            duration: Duration of the drag operation
         """
-        # Ensure coordinates are within safe bounds
-        screen_width = self.screen_region[2]
-        screen_height = self.screen_region[3]
-        safety_margin = 5
-        
-        start_x = max(safety_margin, min(start_x, screen_width - safety_margin))
-        start_y = max(safety_margin, min(start_y, screen_height - safety_margin))
-        end_x = max(safety_margin, min(end_x, screen_width - safety_margin))
-        end_y = max(safety_margin, min(end_y, screen_height - safety_margin))
-        
-        # Perform the drag
-        pyautogui.moveTo(start_x, start_y)
-        pyautogui.dragTo(end_x, end_y, duration=duration)
-        
-        # Reduced wait time after drag
-        time.sleep(0.1)
+        try:
+            # Use our enhanced input system
+            self.input_enhancer.drag(start_x, start_y, end_x, end_y, duration=duration)
+            return True
+        except Exception as e:
+            self.logger.error(f"Mouse drag failed: {e}")
+            return False
     
     def pan_view(self, direction, distance=100):
         """
@@ -1230,23 +1190,20 @@ class AutoVisionInterface(BaseInterface):
     
     def middle_click(self, x=None, y=None):
         """
-        Middle-click at the specified coordinates or at the current mouse position.
-        Some games use this for camera control.
+        Perform a middle-click at the specified coordinates.
         
         Args:
-            x, y: Optional coordinates to middle-click at
+            x: X coordinate (None for current position)
+            y: Y coordinate (None for current position)
         """
-        if x is not None and y is not None:
-            # Move to the specified coordinates first
-            screen_width = self.screen_region[2]
-            screen_height = self.screen_region[3]
-            safety_margin = 5
-            
-            safe_x = max(safety_margin, min(x, screen_width - safety_margin))
-            safe_y = max(safety_margin, min(y, screen_height - safety_margin))
-            
-            pyautogui.moveTo(safe_x, safe_y)
-        
-        # Perform middle click
-        pyautogui.middleClick()
-        time.sleep(0.1) 
+        try:
+            if x is not None and y is not None:
+                # Use our enhanced input system
+                self.input_enhancer.click(x=x, y=y, button='middle')
+            else:
+                # Click at current position
+                self.input_enhancer.click(button='middle')
+            return True
+        except Exception as e:
+            self.logger.error(f"Middle-click failed: {e}")
+            return False 

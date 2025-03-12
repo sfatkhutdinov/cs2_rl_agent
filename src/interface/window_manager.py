@@ -158,7 +158,9 @@ class WindowManager:
             Tuple of (width, height)
         """
         try:
-            width, height = pyautogui.size()
+            # width, height = pyautogui.size()
+            width = 1920
+            height = 1080
             return (width, height)
         except Exception as e:
             logger.error(f"Error getting screen resolution: {str(e)}")

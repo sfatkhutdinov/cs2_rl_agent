@@ -461,8 +461,17 @@ class AutonomousCS2Environment(gym.Wrapper):
             
             # Ensure we have a valid observation
             if observation is None:
+                self.logger.warning("Received None observation, using fallback")
                 observation = self._get_fallback_observation()
                 info["warning"] = "Using fallback observation"
+            
+            # Check if observation is iterable (to fix 'NoneType' not iterable error)
+            try:
+                iter(observation)
+            except TypeError:
+                self.logger.warning(f"Non-iterable observation received: {type(observation)}, using fallback")
+                observation = self._get_fallback_observation()
+                info["warning"] = "Using fallback for non-iterable observation"
             
             # Store action history for learning patterns
             if not hasattr(self, 'action_history'):
@@ -893,12 +902,32 @@ class AutonomousCS2Environment(gym.Wrapper):
         Args:
             exploration_result: Result from menu exploration
         """
+        # Safety check for invalid result types
+        if exploration_result is None:
+            self.logger.warning("Cannot update discovery buffer with None result")
+            return
+            
+        # Handle case where result is a boolean
+        if isinstance(exploration_result, bool):
+            self.logger.debug(f"Exploration result was boolean: {exploration_result}")
+            return
+            
+        # Ensure result is a dictionary
+        if not isinstance(exploration_result, dict):
+            self.logger.warning(f"Cannot update discovery buffer with non-dict result: {type(exploration_result)}")
+            return
+            
+        # Ensure required keys are present
+        if "position" not in exploration_result:
+            self.logger.warning("Exploration result missing required position key")
+            return
+            
         # Create a discovery record
         discovery = {
             "name": exploration_result.get("menu_name", 
                                          exploration_result.get("element_name", "unknown")),
             "position": exploration_result["position"],
-            "confidence": exploration_result["confidence"],
+            "confidence": exploration_result.get("confidence", 0.5),  # Default confidence if not provided
             "discovered_at": self.total_steps
         }
         
@@ -988,12 +1017,43 @@ class AutonomousCS2Environment(gym.Wrapper):
             True if exploration was successful, False otherwise
         """
         # Use menu explorer to find and click on a menu item
-        result = self.menu_explorer.explore_random_menu(self.env.interface)
-        
-        # Update discovery buffer with the result
-        self._update_discovery_buffer(result)
-        
-        return result['success']
+        try:
+            # Check if menu explorer is available
+            if not hasattr(self, 'menu_explorer') or self.menu_explorer is None:
+                self.logger.warning("No menu explorer available")
+                return False
+                
+            # Check if the explore_random_menu method exists
+            if not hasattr(self.menu_explorer, 'explore_random_menu'):
+                self.logger.warning("menu_explorer doesn't have explore_random_menu method")
+                return False
+                
+            # Call the explore_random_menu method
+            result = self.menu_explorer.explore_random_menu()
+            
+            # Check if result is valid
+            if result is None:
+                self.logger.warning("Menu exploration returned None")
+                return False
+                
+            # Make sure result is a dictionary
+            if not isinstance(result, dict):
+                self.logger.warning(f"Menu exploration returned non-dict: {type(result)}")
+                return False
+                
+            # Update discovery buffer with the result (safely)
+            try:
+                self._update_discovery_buffer(result)
+            except Exception as buffer_error:
+                self.logger.warning(f"Error updating discovery buffer: {buffer_error}")
+                # Continue execution - this is not a critical error
+                
+            # Get the success flag from the result
+            return result.get('success', False)
+            
+        except Exception as e:
+            self.logger.warning(f"Error in _explore_menu: {str(e)}")
+            return False
     
     def _explore_ui(self):
         """

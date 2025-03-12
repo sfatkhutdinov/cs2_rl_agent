@@ -3,6 +3,13 @@
 Train a discovery-based agent for Cities: Skylines 2 using PPO.
 """
 
+# Enable CUDA support first
+try:
+    import enable_cuda
+    logging.info("CUDA enabler imported")
+except ImportError:
+    print("CUDA enabler not found - continuing without explicit GPU configuration")
+    
 import os
 import sys
 import yaml
@@ -17,11 +24,26 @@ import traceback
 
 import numpy as np
 
-import stable_baselines3
-from stable_baselines3 import PPO
-from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList
-from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.vec_env import DummyVecEnv
+# Add error handling for TensorFlow/Tensorboard imports
+try:
+    # Prevent TensorFlow from using more GPU memory than needed
+    os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
+    # Suppress TensorFlow logging 
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+    
+    # Import Stable Baselines3 with error handling
+    import stable_baselines3
+    from stable_baselines3 import PPO
+    from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList
+    from stable_baselines3.common.monitor import Monitor
+    from stable_baselines3.common.vec_env import DummyVecEnv
+except ImportError as e:
+    print(f"Error importing ML libraries: {e}")
+    print("This might be due to incompatible versions of TensorFlow, PyTorch, or Tensorboard.")
+    print("Please try running the setup script with these specific versions:")
+    print("pip install tensorflow==2.13.0 torch==2.0.1 tensorboard==2.13.0 stable-baselines3==2.1.0")
+    sys.exit(1)
+
 from gymnasium import spaces
 import gymnasium as gym
 
@@ -45,6 +67,9 @@ def main():
     parser = argparse.ArgumentParser(description="Train a discovery-based agent for Cities: Skylines 2")
     parser.add_argument("--config", type=str, default="config/discovery_config.yaml", help="Path to config file")
     parser.add_argument("--checkpoint", type=str, default=None, help="Path to checkpoint to continue from")
+    parser.add_argument("--timesteps", type=int, default=None, help="Override total timesteps in config")
+    parser.add_argument("--goal-focus", action="store_true", help="Emphasize city-building goals in rewards")
+    parser.add_argument("--exploration-focus", action="store_true", help="Emphasize exploration in rewards")
     args = parser.parse_args()
     
     # Load config
@@ -52,6 +77,19 @@ def main():
         with open(args.config, "r") as f:
             config = yaml.safe_load(f)
             logger.info(f"Loaded config from {args.config}")
+            
+            # Apply focus settings
+            if args.goal_focus:
+                logger.info("Setting goal-oriented focus (emphasizing city metrics)")
+                if "base_env_config" not in config:
+                    config["base_env_config"] = {}
+                config["base_env_config"]["reward_focus"] = "goal"
+            elif args.exploration_focus:
+                logger.info("Setting exploration focus (emphasizing discovery)")
+                if "base_env_config" not in config:
+                    config["base_env_config"] = {}
+                config["base_env_config"]["reward_focus"] = "explore"
+                
     except Exception as e:
         logger.error(f"Error loading config: {e}")
         return 1
@@ -143,7 +181,7 @@ def main():
         
         # Configure training settings
         training_config = config.get("training_config", {})
-        total_timesteps = training_config.get("total_timesteps", 500000)
+        total_timesteps = args.timesteps or training_config.get("total_timesteps", 500000)
         log_interval = training_config.get("log_interval", 10)
         
         # Log training start

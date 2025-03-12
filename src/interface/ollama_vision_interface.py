@@ -17,6 +17,9 @@ import io
 from collections import OrderedDict
 import threading
 from dataclasses import dataclass, field
+import PIL.ImageGrab
+import mss
+import mss.tools
 
 from .auto_vision_interface import AutoVisionInterface
 
@@ -131,6 +134,11 @@ class OllamaVisionInterface(AutoVisionInterface):
         self.cache_ttl = self.ollama_config.get("cache_ttl", 5)  # seconds
         self.cache_timestamp = 0
         
+        # Screenshot tracking
+        self.last_screenshot_time = 0
+        self.screenshot_cooldown = self.ollama_config.get("screenshot_cooldown", 0.5)  # seconds
+        self.screenshot_expiry = 5.0  # seconds before a screenshot is considered stale
+        
         # Set up debugging logs directory
         self.debug_dir = os.path.join("logs", "vision_debug")
         os.makedirs(self.debug_dir, exist_ok=True)
@@ -188,238 +196,231 @@ class OllamaVisionInterface(AutoVisionInterface):
         self.response_cache = ResponseCache(max_size=self.ollama_config.get("vision_cache_size", 10))
         
         # Connection and retry settings
-        self.timeout = 30  # Default timeout in seconds
-        self.max_retries = 3
-        self.retry_delay = 1.0  # Initial retry delay in seconds
+        self.timeout = self.ollama_config.get("timeout", 60)  # Increased default timeout to 60 seconds
+        self.max_retries = self.ollama_config.get("max_retries", 3)
+        self.retry_delay = self.ollama_config.get("retry_delay", 1.0)  # Initial retry delay in seconds
         
         # Thread lock for API requests
         self.api_lock = threading.Lock()
         
-    def query_ollama(self, image: np.ndarray, prompt: str) -> Dict[str, Any]:
+        # Check if Ollama is running
+        self._verify_ollama_server()
+        
+    def _verify_ollama_server(self):
+        """Verify that the Ollama server is running and responding"""
+        try:
+            self.logger.info(f"Verifying Ollama server at {self.ollama_url}...")
+            health_url = self.ollama_url.replace('/api/generate', '/api/health')
+            
+            # Try a simple HTTP request to check if Ollama is running
+            response = requests.get(health_url, timeout=5)
+            
+            if response.status_code == 200:
+                self.logger.info("Ollama server is running.")
+            else:
+                self.logger.warning(f"Ollama server returned unexpected status: {response.status_code}")
+                self.logger.warning("Vision features may not work correctly.")
+        except requests.exceptions.RequestException as e:
+            self.logger.warning(f"Could not connect to Ollama server: {str(e)}")
+            self.logger.warning("Ensure Ollama is running before using vision features.")
+            
+    def query_ollama(self, prompt: str, image: np.ndarray, 
+                   temperature: float = 0.7, timeout: Optional[int] = None) -> Dict[str, Any]:
         """
-        Send an image to Ollama vision model and get a response.
+        Send a query to the Ollama API with an image.
         
         Args:
-            image: The image to analyze as numpy array (BGR format from OpenCV)
-            prompt: The prompt to send to the model
+            prompt: Text prompt
+            image: Image as numpy array
+            temperature: Model temperature
+            timeout: Timeout in seconds
             
         Returns:
-            Dictionary containing the model's response
+            API response as a dictionary
         """
-        # Check cache first
-        cached_response = self.response_cache.get(prompt, image)
-        if cached_response is not None:
-            self.logger.debug("Using cached response")
-            return cached_response
-        
-        # Convert from BGR to RGB
-        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        
-        # Save screenshot for debugging (periodically)
-        self.screenshot_counter += 1
-        if self.screenshot_counter % self.screenshot_frequency == 0:
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            screenshot_path = os.path.join(self.debug_dir, f"screen_{timestamp}.jpg")
-            cv2.imwrite(screenshot_path, image)
-            self.logger.info(f"Saved debug screenshot to {screenshot_path}")
-        
-        # Convert to PIL Image and then to base64
-        pil_image = Image.fromarray(image_rgb)
-        buffer = BytesIO()
-        pil_image.save(buffer, format="JPEG", quality=85)  # Reduced quality for smaller payload
-        base64_image = base64.b64encode(buffer.getvalue()).decode("utf-8")
-        
-        # Create the payload
-        payload = {
-            "model": self.ollama_model,
-            "prompt": prompt,
-            "images": [base64_image],
-            "stream": False,
-            "options": {
-                "temperature": self.temperature,
-                "num_predict": self.max_tokens,
-                "stop": ["}"]  # Stop after closing brace to prevent extra text
-            }
-        }
-        
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        prompt_type = "ui_analysis" if self.ui_analysis_prompt in prompt else "population_guidance"
-        
-        # Get retry configuration
-        max_retries = self.ollama_config.get("retries", 3)
-        retry_delay = self.ollama_config.get("retry_delay", 1.0)
-        timeout = self.ollama_config.get("response_timeout", 30)
-        
-        for attempt in range(max_retries):
+        if timeout is None:
+            timeout = self.timeout
+            
+        # Get API lock to avoid multiple simultaneous requests
+        with self.api_lock:
+            # Early validation of parameters
+            if not prompt or not isinstance(prompt, str):
+                self.logger.error(f"Invalid prompt type: {type(prompt)}")
+                return {"error": "Invalid prompt"}
+            
+            # Validate image before processing
+            if image is None:
+                self.logger.error("Cannot query Ollama with None image")
+                return {"error": "Empty image provided"}
+            
+            # Handle case where image is a string (error in the logs)
+            if isinstance(image, str):
+                self.logger.error("Image is a string, not a numpy array")
+                return {"error": "Invalid image type: expected numpy array, got string"}
+            
+            # Check if image is a numpy array with content
+            if not isinstance(image, np.ndarray):
+                self.logger.error(f"Cannot query Ollama with invalid image type: {type(image)}")
+                return {"error": f"Invalid image type: expected numpy array, got {type(image)}"}
+            
+            if image.size == 0:
+                self.logger.error("Cannot query Ollama with empty image")
+                return {"error": "Empty image array provided"}
+            
+            # Encode the image as base64
             try:
-                self.logger.info(f"Querying Ollama with {prompt_type} prompt (attempt {attempt + 1}/{max_retries})")
-                start_time = time.time()
+                # Save image dimensions before conversion
+                img_height, img_width = image.shape[:2]
+                self.logger.info(f"Processing image with dimensions: {img_width}x{img_height}")
                 
-                # Make the API call with timeout
-                response = requests.post(
-                    self.ollama_url,
-                    json=payload,
-                    timeout=timeout
-                )
+                # Reduce image size if it's too large (to avoid timeouts)
+                max_dim = 1024
+                if img_height > max_dim or img_width > max_dim:
+                    self.logger.info(f"Resizing large image from {img_width}x{img_height}")
+                    scale = max_dim / max(img_height, img_width)
+                    new_width = int(img_width * scale)
+                    new_height = int(img_height * scale)
+                    image = cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_AREA)
+                    self.logger.info(f"Resized image to {new_width}x{new_height}")
                 
-                query_time = time.time() - start_time
-                self.logger.info(f"Ollama query took {query_time:.2f} seconds")
+                # Ensure image has correct shape and dtype for PIL
+                if len(image.shape) < 3 or image.shape[-1] not in [1, 3, 4]:
+                    self.logger.error(f"Invalid image shape: {image.shape}")
+                    return {"error": f"Invalid image shape: {image.shape}"}
                 
-                if response.status_code == 200:
-                    result = response.json()
+                img = Image.fromarray(image.astype('uint8'))
+                buffered = BytesIO()
+                img.save(buffered, format="JPEG", quality=75)  # Lower quality to reduce size
+                img_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+                img_size_kb = len(buffered.getvalue()) / 1024
+                self.logger.info(f"Encoded image size: {img_size_kb:.2f} KB")
+                
+                # If image is still too large, further reduce quality
+                if img_size_kb > 1000:  # 1MB limit
+                    self.logger.warning(f"Image too large ({img_size_kb:.2f} KB), reducing quality")
+                    buffered = BytesIO()
+                    img.save(buffered, format="JPEG", quality=50)  # Further reduce quality
+                    img_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+                    img_size_kb = len(buffered.getvalue()) / 1024
+                    self.logger.info(f"Reduced image size: {img_size_kb:.2f} KB")
+            except Exception as img_err:
+                self.logger.error(f"Failed to convert image: {str(img_err)}")
+                return {"error": f"Image conversion failed: {str(img_err)}"}
+            
+            # Prepare the request payload
+            payload = {
+                "model": self.ollama_model,
+                "prompt": prompt,
+                "stream": False,
+                "options": {
+                    "temperature": temperature
+                },
+                "images": [img_base64]
+            }
+            
+            # Use exponential backoff for retries
+            retry_count = 0
+            current_delay = self.retry_delay
+            
+            while retry_count <= self.max_retries:
+                try:
+                    self.logger.info(f"Querying Ollama API (attempt {retry_count + 1})")
+                    start_time = time.time()
                     
-                    # Log the response for debugging
-                    with open(self.json_log_file, "a", encoding="utf-8") as f:
-                        log_entry = {
-                            "timestamp": timestamp,
-                            "prompt_type": prompt_type,
-                            "response": result,
-                            "query_time_seconds": query_time,
-                            "attempt": attempt + 1
-                        }
-                        f.write(json.dumps(log_entry) + "\n")
+                    # Make the API request
+                    response = requests.post(
+                        self.ollama_url,
+                        json=payload,
+                        timeout=timeout
+                    )
                     
-                    self.logger.info(f"Logged {prompt_type} response to {self.json_log_file}")
+                    query_time = time.time() - start_time
+                    self.logger.info(f"Ollama query completed in {query_time:.2f} seconds")
                     
-                    # Validate JSON if enabled
-                    if self.ollama_config.get("json_validation", True):
-                        parsed = self.extract_json_from_response(result)
-                        if "error" not in parsed:
-                            # Cache the result
-                            self.response_cache.add(prompt, image, result)
-                            return result
-                        elif attempt < max_retries - 1:
-                            self.logger.warning(f"Invalid JSON on attempt {attempt + 1}, retrying...")
-                            time.sleep(retry_delay)
-                            continue
-                    
-                    return result
-                else:
-                    error_msg = f"Error querying Ollama API: {response.status_code} - {response.text}"
-                    self.logger.error(error_msg)
-                    
-                    if attempt < max_retries - 1:
-                        self.logger.warning(f"Request failed on attempt {attempt + 1}, retrying...")
-                        time.sleep(retry_delay)
-                        continue
-                    
-                    # Log the final error
-                    with open(self.json_log_file, "a", encoding="utf-8") as f:
-                        log_entry = {
-                            "timestamp": timestamp,
-                            "prompt_type": prompt_type,
-                            "error": error_msg,
-                            "status_code": response.status_code,
-                            "attempt": attempt + 1
-                        }
-                        f.write(json.dumps(log_entry) + "\n")
-                    
-                    return {"error": f"Status code: {response.status_code}"}
-                    
-            except requests.Timeout:
-                error_msg = f"Timeout after {timeout} seconds when querying Ollama"
-                self.logger.error(error_msg)
+                    # Check for successful response
+                    if response.status_code == 200:
+                        try:
+                            result = response.json()
+                            return self._process_ollama_response(result)
+                        except json.JSONDecodeError:
+                            self.logger.error("Failed to parse Ollama API response as JSON")
+                            return {"error": "Invalid JSON in response"}
+                    else:
+                        self.logger.error(f"Ollama API error: {response.status_code} - {response.text}")
+                        
+                        # Specific handling based on error code
+                        if response.status_code == 400:
+                            # Might be an issue with the prompt or image
+                            return {"error": f"API error: {response.status_code} - {response.text}"}
+                        elif response.status_code in [429, 503]:
+                            # Rate limiting or server overload, retry with backoff
+                            pass
+                        elif response.status_code >= 500:
+                            # Server error, retry with backoff
+                            pass
+                        else:
+                            # Other errors, may not be retryable
+                            return {"error": f"API error: {response.status_code} - {response.text}"}
                 
-                if attempt < max_retries - 1:
-                    self.logger.warning(f"Request timed out on attempt {attempt + 1}, retrying...")
-                    time.sleep(retry_delay)
-                    continue
+                except requests.exceptions.Timeout:
+                    self.logger.error(f"Timeout after {timeout} seconds when querying Ollama")
+                    self.logger.warning("Consider increasing the timeout in the config or reducing image size")
+                except requests.exceptions.ConnectionError:
+                    self.logger.error("Connection error when querying Ollama")
+                    self.logger.warning("Ensure Ollama server is running at the configured URL")
+                except Exception as e:
+                    self.logger.error(f"Error querying Ollama: {str(e)}")
+                    return {"error": f"Failed to query Ollama: {str(e)}"}
                 
-                # Log the final timeout
-                with open(self.json_log_file, "a", encoding="utf-8") as f:
-                    log_entry = {
-                        "timestamp": timestamp,
-                        "prompt_type": prompt_type,
-                        "error": error_msg,
-                        "type": "timeout",
-                        "attempt": attempt + 1
-                    }
-                    f.write(json.dumps(log_entry) + "\n")
+                # If we've reached the max retries, break out and return error
+                if retry_count >= self.max_retries:
+                    break
                 
-                return {"error": error_msg}
-                
-            except Exception as e:
-                error_msg = f"Exception when querying Ollama: {str(e)}"
-                self.logger.error(error_msg)
-                
-                if attempt < max_retries - 1:
-                    self.logger.warning(f"Request failed on attempt {attempt + 1}, retrying...")
-                    time.sleep(retry_delay)
-                    continue
-                
-                # Log the final error
-                with open(self.json_log_file, "a", encoding="utf-8") as f:
-                    log_entry = {
-                        "timestamp": timestamp,
-                        "prompt_type": prompt_type,
-                        "error": error_msg,
-                        "attempt": attempt + 1
-                    }
-                    f.write(json.dumps(log_entry) + "\n")
-                
-                return {"error": str(e)}
+                # Exponential backoff with jitter for retry
+                sleep_time = current_delay * (1 + random.random())
+                self.logger.info(f"Retrying in {sleep_time:.1f} seconds (attempt {retry_count + 1}/{self.max_retries})")
+                time.sleep(sleep_time)
+                current_delay *= 2  # Exponential backoff
+                retry_count += 1
+            
+            # If we're here, all retries failed
+            return {"error": "Max retries exceeded when querying Ollama"}
     
-    def extract_json_from_response(self, response: Dict[str, Any]) -> Dict[str, Any]:
+    def _process_ollama_response(self, response: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Extract the JSON content from an Ollama response.
+        Process and clean up the Ollama API response.
         
         Args:
-            response: The raw response from Ollama
+            response: The API response
             
         Returns:
-            Parsed JSON content or error message
+            Processed response
         """
         try:
-            if "error" in response:
-                self.logger.warning(f"Error in Ollama response: {response['error']}")
-                return {"error": response["error"]}
-            
-            # Get the response text
-            text = response.get("response", "")
-            
-            # Try to find JSON content between brackets
-            json_start = text.find("{")
-            json_end = text.rfind("}") + 1
-            
-            if json_start >= 0 and json_end > json_start:
-                json_text = text[json_start:json_end]
+            if "response" not in response:
+                return {"error": "No response field in Ollama result"}
                 
-                # Clean up the JSON text
-                # Remove any markdown code block markers
-                json_text = json_text.replace("```json", "").replace("```", "")
+            text_response = response.get("response", "")
+            
+            # Try to extract JSON from the response if it contains JSON
+            try:
+                # Look for JSON within the response
+                json_start = text_response.find('{')
+                json_end = text_response.rfind('}')
                 
-                # Remove any trailing commas before closing braces/brackets
-                json_text = json_text.replace(",]", "]").replace(",}", "}")
+                if json_start != -1 and json_end != -1 and json_end > json_start:
+                    potential_json = text_response[json_start:json_end + 1]
+                    result = json.loads(potential_json)
+                    return result
+            except json.JSONDecodeError:
+                # If JSON extraction failed, just return the raw response
+                pass
                 
-                # Try to parse the JSON
-                try:
-                    parsed_json = json.loads(json_text)
-                    self.logger.info(f"Parsed JSON with keys: {list(parsed_json.keys())}")
-                    return parsed_json
-                except json.JSONDecodeError as e:
-                    # If parsing fails, try to fix common issues
-                    self.logger.warning(f"Initial JSON parse failed: {str(e)}, attempting to fix...")
-                    
-                    # Replace single quotes with double quotes
-                    json_text = json_text.replace("'", '"')
-                    
-                    # Ensure boolean values are lowercase
-                    json_text = json_text.replace("True", "true").replace("False", "false")
-                    
-                    # Try parsing again
-                    try:
-                        parsed_json = json.loads(json_text)
-                        self.logger.info(f"Successfully parsed JSON after fixes with keys: {list(parsed_json.keys())}")
-                        return parsed_json
-                    except json.JSONDecodeError as e2:
-                        self.logger.error(f"Failed to parse JSON even after fixes: {str(e2)}")
-                        return {"error": f"Failed to parse JSON: {str(e2)}", "raw_text": json_text}
-            else:
-                self.logger.warning(f"No JSON found in response: {text[:100]}...")
-                return {"error": "No JSON found in response", "raw_text": text}
+            return {"text": text_response}
+            
         except Exception as e:
-            self.logger.error(f"Exception extracting JSON: {str(e)}")
-            return {"error": f"Exception extracting JSON: {str(e)}"}
+            self.logger.error(f"Error processing Ollama response: {str(e)}")
+            return {"error": f"Failed to process response: {str(e)}"}
     
     def get_enhanced_game_state(self) -> Dict[str, Any]:
         """
@@ -438,7 +439,17 @@ class OllamaVisionInterface(AutoVisionInterface):
         screen = self.capture_screen()
         
         # Query Ollama for UI analysis
-        response = self.query_ollama(screen, self.ui_analysis_prompt)
+        if screen is None:
+            self.logger.error("Failed to capture screen for enhanced game state")
+            return {"error": "Failed to capture screen"}
+            
+        # Check if screen is a string (error condition)
+        if isinstance(screen, str):
+            self.logger.error("Screen is a string, not a numpy array")
+            return {"error": "Invalid screen data type"}
+            
+        # Query Ollama for UI analysis with correct parameter order
+        response = self.query_ollama(prompt=self.ui_analysis_prompt, image=screen)
         
         # Parse the response
         ui_analysis = self.extract_json_from_response(response)
@@ -465,8 +476,18 @@ class OllamaVisionInterface(AutoVisionInterface):
         # Capture the current screen
         screen = self.capture_screen()
         
-        # Query Ollama for population growth analysis
-        response = self.query_ollama(screen, self.population_growth_prompt)
+        # Check if screen capture was successful
+        if screen is None:
+            self.logger.error("Failed to capture screen for population growth guidance")
+            return {"error": "Failed to capture screen"}
+            
+        # Check if screen is a string (error condition)
+        if isinstance(screen, str):
+            self.logger.error("Screen is a string, not a numpy array")
+            return {"error": "Invalid screen data type"}
+            
+        # Query Ollama for population growth analysis with correct parameter order
+        response = self.query_ollama(prompt=self.population_growth_prompt, image=screen)
         
         # Parse the response
         guidance = self.extract_json_from_response(response)
@@ -750,10 +771,60 @@ class OllamaVisionInterface(AutoVisionInterface):
             Screenshot as a numpy array or None if capture fails
         """
         try:
-            # Use pyautogui for screen capture
-            import pyautogui
-            screenshot = pyautogui.screenshot()
-            return np.array(screenshot)
+            # Add rate limiting to prevent too many captures
+            current_time = time.time()
+            elapsed = current_time - self.last_screenshot_time
+            
+            if elapsed < self.screenshot_cooldown:
+                # If we're capturing too frequently, wait a bit
+                time.sleep(self.screenshot_cooldown - elapsed)
+            
+            # Update last capture time
+            self.last_screenshot_time = time.time()
+            
+            # Small delay
+            time.sleep(0.1)
+            
+            # First try with PIL.ImageGrab
+            try:
+                screenshot = PIL.ImageGrab.grab()
+                # Convert to numpy array and verify it's valid
+                if screenshot is None:
+                    self.logger.warning("PIL.ImageGrab.grab() returned None, trying alternative method")
+                else:
+                    np_screenshot = np.array(screenshot)
+                    
+                    # Verify we have a valid array
+                    if np_screenshot.size == 0:
+                        self.logger.warning("Empty screenshot array from PIL.ImageGrab, trying alternative method")
+                    else:
+                        return np_screenshot
+            except Exception as pil_err:
+                self.logger.warning(f"PIL.ImageGrab failed: {str(pil_err)}, trying alternative method")
+            
+            # If PIL.ImageGrab fails, try with mss
+            try:
+                with mss.mss() as sct:
+                    # Get primary monitor
+                    monitor = sct.monitors[1]
+                    # Capture the screen
+                    sct_img = sct.grab(monitor)
+                    # Convert to numpy array
+                    np_screenshot = np.array(sct_img)
+                    # Convert BGRA to BGR
+                    np_screenshot = cv2.cvtColor(np_screenshot, cv2.COLOR_BGRA2BGR)
+                    return np_screenshot
+            except Exception as mss_err:
+                self.logger.error(f"MSS screenshot method failed: {str(mss_err)}")
+                
+                # Last resort - try pyautogui
+                try:
+                    screenshot = pyautogui.screenshot()
+                    np_screenshot = np.array(screenshot)
+                    return np_screenshot
+                except Exception as pyautogui_err:
+                    self.logger.error(f"All screenshot methods failed. Last error: {str(pyautogui_err)}")
+                    return None
         except Exception as e:
             self.logger.error(f"Failed to capture screen: {str(e)}")
             return None
@@ -780,13 +851,27 @@ class OllamaVisionInterface(AutoVisionInterface):
             self.logger.info("Using cached vision model response")
             return cached_response
         
+        # Validate image first
+        if image is None:
+            self.logger.error("Cannot query vision model with None image")
+            return {"error": "Empty image provided"}
+        
+        if isinstance(image, str):
+            self.logger.error("Image is a string, not a numpy array")
+            return {"error": "Invalid image type: expected numpy array, got string"}
+        
         # If not in cache, make the API call
         if enforce_json:
             # Add JSON formatting to the prompt
             prompt = f"{prompt}\n\nYou must respond in valid JSON format only."
         
-        # Prepare and send the request
-        response = self.query_ollama(prompt, image, temperature, timeout)
+        # Prepare and send the request with explicit parameter names
+        response = self.query_ollama(
+            prompt=prompt, 
+            image=image, 
+            temperature=temperature, 
+            timeout=timeout
+        )
         
         # Add to cache if successful
         if "error" not in response:
@@ -794,150 +879,299 @@ class OllamaVisionInterface(AutoVisionInterface):
         
         return response
 
-    def query_ollama(self, prompt: str, image: np.ndarray, 
-                    temperature: float = 0.7, timeout: Optional[int] = None) -> Dict[str, Any]:
+    def extract_json_from_response(self, response: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Send a query to the Ollama API with an image.
+        Extract the JSON content from an Ollama response.
         
         Args:
-            prompt: Text prompt
-            image: Image as numpy array
-            temperature: Model temperature
-            timeout: Timeout in seconds
+            response: The raw response from Ollama
             
         Returns:
-            API response as a dictionary
-        """
-        if timeout is None:
-            timeout = self.timeout
-            
-        # Get API lock to avoid multiple simultaneous requests
-        with self.api_lock:
-            # Encode the image as base64
-            try:
-                if image is None or (isinstance(image, np.ndarray) and image.size == 0):
-                    self.logger.error("Cannot query Ollama with empty image")
-                    return {"error": "Empty image provided"}
-                
-                # Convert numpy array to PIL Image and then to base64
-                img = Image.fromarray(image)
-                buffered = BytesIO()
-                img.save(buffered, format="JPEG", quality=85)  # Lower quality to reduce size
-                img_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
-                
-                # Prepare the request payload
-                payload = {
-                    "model": self.ollama_model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {
-                        "temperature": temperature
-                    },
-                    "images": [img_base64]
-                }
-                
-                # Use exponential backoff for retries
-                retry_count = 0
-                current_delay = self.retry_delay
-                
-                while retry_count <= self.max_retries:
-                    try:
-                        self.logger.info(f"Querying Ollama API (attempt {retry_count + 1})")
-                        start_time = time.time()
-                        
-                        # Make the API request
-                        response = requests.post(
-                            self.ollama_url,
-                            json=payload,
-                            timeout=timeout
-                        )
-                        
-                        query_time = time.time() - start_time
-                        self.logger.info(f"Ollama query completed in {query_time:.2f} seconds")
-                        
-                        # Check for successful response
-                        if response.status_code == 200:
-                            try:
-                                result = response.json()
-                                return self._process_ollama_response(result)
-                            except json.JSONDecodeError:
-                                self.logger.error("Failed to parse Ollama API response as JSON")
-                                return {"error": "Invalid JSON in response"}
-                        else:
-                            self.logger.error(f"Ollama API error: {response.status_code} - {response.text}")
-                            
-                            # Specific handling based on error code
-                            if response.status_code == 400:
-                                # Might be an issue with the prompt or image
-                                return {"error": f"API error: {response.status_code} - {response.text}"}
-                            elif response.status_code in [429, 503]:
-                                # Rate limiting or server overload, retry with backoff
-                                pass
-                            elif response.status_code >= 500:
-                                # Server error, retry with backoff
-                                pass
-                            else:
-                                # Other errors, may not be retryable
-                                return {"error": f"API error: {response.status_code} - {response.text}"}
-                    
-                    except requests.exceptions.Timeout:
-                        self.logger.error(f"Timeout after {timeout} seconds when querying Ollama")
-                    except requests.exceptions.ConnectionError:
-                        self.logger.error("Connection error when querying Ollama")
-                    except Exception as e:
-                        self.logger.error(f"Error querying Ollama: {str(e)}")
-                        return {"error": f"Failed to query Ollama: {str(e)}"}
-                    
-                    # If we've reached the max retries, break out and return error
-                    if retry_count >= self.max_retries:
-                        break
-                    
-                    # Exponential backoff with jitter for retry
-                    sleep_time = current_delay * (1 + random.random())
-                    self.logger.info(f"Retrying in {sleep_time:.1f} seconds (attempt {retry_count + 1}/{self.max_retries})")
-                    time.sleep(sleep_time)
-                    current_delay *= 2  # Exponential backoff
-                    retry_count += 1
-                
-                # If we're here, all retries failed
-                return {"error": "Max retries exceeded when querying Ollama"}
-                
-            except Exception as e:
-                self.logger.error(f"Error in query_ollama: {str(e)}")
-                return {"error": str(e)}
-    
-    def _process_ollama_response(self, response: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Process and clean up the Ollama API response.
-        
-        Args:
-            response: The API response
-            
-        Returns:
-            Processed response
+            Parsed JSON content or error message
         """
         try:
-            if "response" not in response:
-                return {"error": "No response field in Ollama result"}
-                
-            text_response = response.get("response", "")
+            if "error" in response:
+                self.logger.warning(f"Error in Ollama response: {response['error']}")
+                return {"error": response["error"]}
             
-            # Try to extract JSON from the response if it contains JSON
-            try:
-                # Look for JSON within the response
-                json_start = text_response.find('{')
-                json_end = text_response.rfind('}')
-                
-                if json_start != -1 and json_end != -1 and json_end > json_start:
-                    potential_json = text_response[json_start:json_end + 1]
-                    result = json.loads(potential_json)
-                    return result
-            except json.JSONDecodeError:
-                # If JSON extraction failed, just return the raw response
-                pass
-                
-            return {"text": text_response}
+            # Get the response text
+            text = response.get("response", "")
             
+            # Try to find JSON content between brackets
+            json_start = text.find("{")
+            json_end = text.rfind("}") + 1
+            
+            if json_start >= 0 and json_end > json_start:
+                json_text = text[json_start:json_end]
+                
+                # Clean up the JSON text
+                # Remove any markdown code block markers
+                json_text = json_text.replace("```json", "").replace("```", "")
+                
+                # Remove any trailing commas before closing braces/brackets
+                json_text = json_text.replace(",]", "]").replace(",}", "}")
+                
+                # Try to parse the JSON
+                try:
+                    parsed_json = json.loads(json_text)
+                    self.logger.info(f"Parsed JSON with keys: {list(parsed_json.keys())}")
+                    return parsed_json
+                except json.JSONDecodeError as e:
+                    # If parsing fails, try to fix common issues
+                    self.logger.warning(f"Initial JSON parse failed: {str(e)}, attempting to fix...")
+                    
+                    # Replace single quotes with double quotes
+                    json_text = json_text.replace("'", '"')
+                    
+                    # Ensure boolean values are lowercase
+                    json_text = json_text.replace("True", "true").replace("False", "false")
+                    
+                    # Try parsing again
+                    try:
+                        parsed_json = json.loads(json_text)
+                        self.logger.info(f"Successfully parsed JSON after fixes with keys: {list(parsed_json.keys())}")
+                        return parsed_json
+                    except json.JSONDecodeError as e2:
+                        self.logger.error(f"Failed to parse JSON even after fixes: {str(e2)}")
+                        return {"error": f"Failed to parse JSON: {str(e2)}", "raw_text": json_text}
+            else:
+                self.logger.warning(f"No JSON found in response: {text[:100]}...")
+                return {"error": "No JSON found in response", "raw_text": text}
         except Exception as e:
-            self.logger.error(f"Error processing Ollama response: {str(e)}")
-            return {"error": f"Failed to process response: {str(e)}"} 
+            self.logger.error(f"Exception extracting JSON: {str(e)}")
+            return {"error": f"Exception extracting JSON: {str(e)}"}
+
+    def _get_observation_space(self):
+        """
+        Attempt to get the observation space from the environment or create a default one.
+        
+        Returns:
+            A valid observation space or None if not available
+        """
+        # Try to get from environment
+        try:
+            # First check if we have a direct reference
+            if hasattr(self, 'env') and hasattr(self.env, 'observation_space'):
+                return self.env.observation_space
+                
+            # If not, try to navigate up to find it
+            if hasattr(self, 'parent') and hasattr(self.parent, 'observation_space'):
+                return self.parent.observation_space
+                
+            # One more level up
+            if hasattr(self, 'parent') and hasattr(self.parent, 'parent') and hasattr(self.parent.parent, 'observation_space'):
+                return self.parent.parent.observation_space
+                
+            return None
+        except Exception as e:
+            self.logger.error(f"Error getting observation space: {str(e)}")
+            return None
+            
+    def get_visual_observation(self, observation_space=None) -> dict:
+        """
+        Get a visual observation using the vision model.
+        
+        Args:
+            observation_space: Optional gymnasium observation space structure
+            
+        Returns:
+            Dictionary with visual observation data
+        """
+        try:
+            # Check if observation_space is provided
+            if observation_space is None:
+                observation_space = self._get_observation_space()
+                if observation_space is None:
+                    self.logger.warning("observation_space is None, using empty default")
+                    # Return a basic default observation that won't cause errors
+                    return {
+                        "population": np.array([0.0], dtype=np.float32),
+                        "happiness": np.array([0.0], dtype=np.float32),
+                        "budget_balance": np.array([0.0], dtype=np.float32),
+                        "traffic": np.array([0.0], dtype=np.float32)
+                    }
+            
+            # Capture current screen
+            screen = self.capture_screen()
+            if screen is None:
+                self.logger.error("Failed to capture screen for visual observation")
+                return self._create_default_observation(observation_space)
+            
+            # Make sure screen is a numpy array, not a string
+            if isinstance(screen, str):
+                self.logger.error("Screen is a string, not a numpy array. Creating default observation.")
+                return self._create_default_observation(observation_space)
+            
+            # Create a vision model query to analyze the current state
+            prompt = """
+            Analyze this screenshot from Cities: Skylines 2 and provide the following information:
+            1. Game state - what is the current city status?
+            2. Current UI elements visible
+            3. Important metrics or indicators
+            4. Any alerts or notifications
+            5. What actions would be helpful right now?
+            
+            Format your response as JSON with these fields:
+            {
+                "game_state": "brief description",
+                "ui_elements": ["list", "of", "visible", "ui", "elements"],
+                "metrics": {"population": value, "money": value, "others": value},
+                "alerts": ["any", "visible", "alerts"],
+                "suggested_actions": ["action1", "action2"]
+            }
+            """
+            
+            # Query the vision model
+            vision_response = self.query_vision_model(prompt=prompt, image=screen, enforce_json=True)
+            
+            # Handle any errors in the response
+            if "error" in vision_response:
+                self.logger.error(f"Failed to get visual observation: {vision_response['error']}")
+                # Create a fallback observation with default values
+                return self._create_default_observation(observation_space)
+            
+            # Process the response into the expected observation format
+            observation = self._process_vision_response_to_observation(vision_response, observation_space)
+            
+            return observation
+        except AttributeError as ae:
+            # Handle the specific 'observation_space' attribute error
+            self.logger.error(f"Failed to get visual observation: {str(ae)}")
+            return {
+                "population": np.array([0.0], dtype=np.float32),
+                "happiness": np.array([0.0], dtype=np.float32),
+                "budget_balance": np.array([0.0], dtype=np.float32),
+                "traffic": np.array([0.0], dtype=np.float32)
+            }
+        except Exception as e:
+            self.logger.error(f"Error in get_visual_observation: {str(e)}")
+            return {
+                "population": np.array([0.0], dtype=np.float32),
+                "happiness": np.array([0.0], dtype=np.float32),
+                "budget_balance": np.array([0.0], dtype=np.float32),
+                "traffic": np.array([0.0], dtype=np.float32)
+            }
+            
+    def _create_default_observation(self, observation_space):
+        """
+        Create a default observation matching the expected observation space.
+        
+        Args:
+            observation_space: The gymnasium observation space
+            
+        Returns:
+            Default observation dictionary
+        """
+        try:
+            # If observation_space is a Dict space, create appropriate default values
+            if hasattr(observation_space, 'spaces'):
+                default_obs = {}
+                # For each space in the dict, create a default value
+                for key, space in observation_space.spaces.items():
+                    if hasattr(space, 'shape'):
+                        # For Box spaces, use zeros
+                        default_obs[key] = np.zeros(space.shape, dtype=np.float32)
+                    elif hasattr(space, 'n'):
+                        # For Discrete spaces, use 0
+                        default_obs[key] = 0
+                    else:
+                        # For other spaces, use None
+                        default_obs[key] = None
+                return default_obs
+            # If it's a simple space, return a zero array
+            elif hasattr(observation_space, 'shape'):
+                return np.zeros(observation_space.shape, dtype=np.float32)
+            else:
+                # Fallback for unknown space types
+                return {}
+        except Exception as e:
+            self.logger.error(f"Error creating default observation: {str(e)}")
+            return {}
+            
+    def _process_vision_response_to_observation(self, vision_response, observation_space):
+        """
+        Process a vision model response into the expected observation format.
+        
+        Args:
+            vision_response: Raw response from vision model
+            observation_space: The gymnasium observation space
+            
+        Returns:
+            Processed observation matching expected format
+        """
+        try:
+            # Start with default observation
+            observation = self._create_default_observation(observation_space)
+            
+            # If the response doesn't have the expected structure, return the default
+            if not isinstance(vision_response, dict):
+                return observation
+                
+            # Extract metrics if they exist and update the observation
+            if 'metrics' in vision_response and isinstance(vision_response['metrics'], dict):
+                metrics = vision_response['metrics']
+                
+                # Map to known observation keys
+                if 'population' in metrics and 'population' in observation:
+                    try:
+                        # Try to convert to float
+                        value = self._extract_numeric_value(metrics['population'])
+                        if value is not None:
+                            observation['population'] = np.array([value], dtype=np.float32)
+                    except:
+                        pass
+                        
+                if 'money' in metrics and 'budget_balance' in observation:
+                    try:
+                        value = self._extract_numeric_value(metrics['money'])
+                        if value is not None:
+                            observation['budget_balance'] = np.array([value], dtype=np.float32)
+                    except:
+                        pass
+                        
+                if 'happiness' in metrics and 'happiness' in observation:
+                    try:
+                        value = self._extract_numeric_value(metrics['happiness'])
+                        if value is not None:
+                            observation['happiness'] = np.array([value], dtype=np.float32)
+                    except:
+                        pass
+                        
+                if 'traffic' in metrics and 'traffic' in observation:
+                    try:
+                        value = self._extract_numeric_value(metrics['traffic'])
+                        if value is not None:
+                            observation['traffic'] = np.array([value], dtype=np.float32)
+                    except:
+                        pass
+            
+            return observation
+        except Exception as e:
+            self.logger.error(f"Error processing vision response to observation: {str(e)}")
+            return self._create_default_observation(observation_space)
+            
+    def _extract_numeric_value(self, value_str):
+        """
+        Extract a numeric value from a string or other data type.
+        
+        Args:
+            value_str: Value to convert to numeric
+            
+        Returns:
+            Numeric value or None if conversion fails
+        """
+        try:
+            # If it's already a number, return it
+            if isinstance(value_str, (int, float)):
+                return float(value_str)
+                
+            # If it's a string, try to extract a number
+            if isinstance(value_str, str):
+                # Remove non-numeric characters except decimal point
+                clean_str = ''.join(c for c in value_str if c.isdigit() or c == '.')
+                if clean_str:
+                    return float(clean_str)
+                    
+            return None
+        except:
+            return None 
