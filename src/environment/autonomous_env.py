@@ -220,11 +220,138 @@ class AutonomousCS2Environment(gym.Wrapper):
                     )
                 )
         
+        # Add the actions to the handlers list
+        self.action_handlers.extend(actions)
+        
+        # Set up keyboard actions
+        self._setup_keyboard_actions()
+        
         # Update action space
         original_size = self.env.action_space.n
         self.action_space = gym.spaces.Discrete(len(actions))
-        self.action_handlers = actions
         self.logger.info(f"Extended action space from {original_size} to {len(actions)} actions")
+    
+    def _setup_keyboard_actions(self):
+        """
+        Set up comprehensive keyboard actions for the agent
+        """
+        # Basic alphabet keys
+        alphabet = "abcdefghijklmnopqrstuvwxyz"
+        for char in alphabet:
+            self._add_keyboard_action(char)
+        
+        # Numbers
+        for num in "0123456789":
+            self._add_keyboard_action(num)
+        
+        # Special keys
+        special_keys = [
+            "space", "backspace", "tab", "enter", "return",
+            "up", "down", "left", "right", "home", "end", 
+            "pageup", "pagedown", "delete", "insert"
+        ]
+        for key in special_keys:
+            self._add_keyboard_action(key)
+        
+        # Symbols
+        symbols = [
+            ".", ",", "/", "\\", "[", "]", "=", "-", "'", ";",
+            "`", "~", "!", "@", "#", "$", "%", "^", "&", "*",
+            "(", ")", "_", "+", "{", "}", "|", ":", "\"", "<",
+            ">", "?"
+        ]
+        for symbol in symbols:
+            self._add_keyboard_action(symbol)
+        
+        # Modifier key combinations
+        for char in alphabet:
+            self._add_modifier_action("shift", char)
+            self._add_modifier_action("ctrl", char)
+        
+        for num in "0123456789":
+            self._add_modifier_action("shift", num)
+            self._add_modifier_action("ctrl", num)
+    
+    def _add_keyboard_action(self, key):
+        """
+        Add a keyboard action for a specific key
+        
+        Args:
+            key: The key to press
+        """
+        self.action_handlers.append(
+            Action(
+                name=f"press_key_{key}",
+                action_fn=lambda k=key: self._press_key(k),
+                action_type=ActionType.KEYBOARD
+            )
+        )
+    
+    def _add_modifier_action(self, modifier, key):
+        """
+        Add a keyboard action with a modifier key
+        
+        Args:
+            modifier: Modifier key (shift, ctrl, alt)
+            key: The key to press with the modifier
+        """
+        # Skip ALT+F4 combination
+        if modifier == "alt" and key == "f4":
+            return
+            
+        # Skip ESC key
+        if key.lower() == "esc" or key.lower() == "escape":
+            return
+            
+        self.action_handlers.append(
+            Action(
+                name=f"{modifier}_{key}",
+                action_fn=lambda m=modifier, k=key: self._press_modified_key(m, k),
+                action_type=ActionType.KEYBOARD
+            )
+        )
+    
+    def _press_key(self, key):
+        """
+        Press a keyboard key
+        
+        Args:
+            key: The key to press
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Skip ESC key
+            if key.lower() == "esc" or key.lower() == "escape":
+                return False
+                
+            pyautogui.press(key)
+            self.logger.debug(f"Pressed key: {key}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error pressing key {key}: {str(e)}")
+            return False
+    
+    def _press_modified_key(self, modifier, key):
+        """
+        Press a key with a modifier
+        
+        Args:
+            modifier: Modifier key (shift, ctrl, alt)
+            key: The key to press with the modifier
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            with pyautogui.hold(modifier):
+                pyautogui.press(key)
+            self.logger.debug(f"Pressed {modifier}+{key}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error pressing {modifier}+{key}: {str(e)}")
+            return False
     
     def _get_fallback_observation(self):
         """Create a minimal valid observation when normal observation fails."""

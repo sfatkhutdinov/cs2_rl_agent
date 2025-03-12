@@ -10,6 +10,7 @@ import time
 import threading
 from typing import Dict, Any, Tuple, List, Optional, Union
 import pyautogui  # Add this import to handle direct actions
+import cv2
 
 from src.environment.vision_guided_env import VisionGuidedCS2Environment
 from src.interface.ollama_vision_interface import OllamaVisionInterface
@@ -885,32 +886,90 @@ class DiscoveryEnvironment(VisionGuidedCS2Environment):
                 action_handler.action_fn()
                 return True
             
-            # Otherwise, try to get the name and parameters
+            # Get the action name
             action_name = action_handler.name if hasattr(action_handler, 'name') else "unknown"
             
-            # Handle mouse actions
-            if "mouse_click" in action_name:
-                x, y = action_handler.params.get("x", None), action_handler.params.get("y", None) if hasattr(action_handler, 'params') else (None, None)
-                if x is not None and y is not None:
-                    pyautogui.click(x=x, y=y)
-                    return True
-            elif "mouse_right_click" in action_name:
-                x, y = action_handler.params.get("x", None), action_handler.params.get("y", None) if hasattr(action_handler, 'params') else (None, None)
-                if x is not None and y is not None:
-                    pyautogui.rightClick(x=x, y=y)
-                    return True
-            elif "mouse_move" in action_name:
-                x, y = action_handler.params.get("x", None), action_handler.params.get("y", None) if hasattr(action_handler, 'params') else (None, None)
-                if x is not None and y is not None:
-                    pyautogui.moveTo(x=x, y=y)
-                    return True
-                    
-            # Handle keyboard actions
-            elif action_name.startswith("key_"):
-                key = action_name[4:]  # Remove "key_" prefix
-                if len(key) == 1 or key.lower() in ["up", "down", "left", "right", "enter", "esc", "escape", "tab"]:
-                    pyautogui.press(key)
-                    return True
+            # Handle the action based on its type
+            if hasattr(action_handler, 'action_type'):
+                # If it has an action_type attribute, use it to determine how to execute
+                if action_handler.action_type == ActionType.KEYBOARD:
+                    # Handle keyboard actions
+                    if action_name.startswith("press_key_"):
+                        key = action_name[10:]  # Remove "press_key_" prefix
+                        # Skip ESC key
+                        if key.lower() != "esc" and key.lower() != "escape":
+                            pyautogui.press(key)
+                            self.logger.info(f"Pressed key: {key}")
+                            return True
+                    elif action_name.startswith("shift_"):
+                        key = action_name[6:]  # Remove "shift_" prefix
+                        with pyautogui.hold('shift'):
+                            pyautogui.press(key)
+                        self.logger.info(f"Pressed SHIFT+{key}")
+                        return True
+                    elif action_name.startswith("ctrl_"):
+                        key = action_name[5:]  # Remove "ctrl_" prefix
+                        with pyautogui.hold('ctrl'):
+                            pyautogui.press(key)
+                        self.logger.info(f"Pressed CTRL+{key}")
+                        return True
+                    elif action_name.startswith("alt_"):
+                        key = action_name[4:]  # Remove "alt_" prefix
+                        # Skip ALT+F4
+                        if key.lower() != "f4":
+                            with pyautogui.hold('alt'):
+                                pyautogui.press(key)
+                            self.logger.info(f"Pressed ALT+{key}")
+                            return True
+                elif action_handler.action_type == ActionType.MOUSE:
+                    # Handle mouse actions
+                    if "mouse_click" in action_name:
+                        x, y = action_handler.params.get("x", None), action_handler.params.get("y", None) if hasattr(action_handler, 'params') else (None, None)
+                        if x is not None and y is not None:
+                            pyautogui.click(x=x, y=y)
+                            self.logger.info(f"Clicked at ({x}, {y})")
+                            return True
+                    elif "mouse_right_click" in action_name:
+                        x, y = action_handler.params.get("x", None), action_handler.params.get("y", None) if hasattr(action_handler, 'params') else (None, None)
+                        if x is not None and y is not None:
+                            pyautogui.rightClick(x=x, y=y)
+                            self.logger.info(f"Right-clicked at ({x}, {y})")
+                            return True
+                    elif "mouse_move" in action_name:
+                        x, y = action_handler.params.get("x", None), action_handler.params.get("y", None) if hasattr(action_handler, 'params') else (None, None)
+                        if x is not None and y is not None:
+                            pyautogui.moveTo(x=x, y=y)
+                            self.logger.info(f"Moved mouse to ({x}, {y})")
+                            return True
+                elif action_handler.action_type == ActionType.CAMERA or action_handler.action_type == ActionType.GAME_ACTION:
+                    # For camera or game actions, use the action_fn
+                    if hasattr(action_handler, 'action_fn'):
+                        return action_handler.action_fn()
+            else:
+                # Fallback to the older style of detecting action types by name
+                # Handle mouse actions
+                if "mouse_click" in action_name:
+                    x, y = action_handler.params.get("x", None), action_handler.params.get("y", None) if hasattr(action_handler, 'params') else (None, None)
+                    if x is not None and y is not None:
+                        pyautogui.click(x=x, y=y)
+                        return True
+                elif "mouse_right_click" in action_name:
+                    x, y = action_handler.params.get("x", None), action_handler.params.get("y", None) if hasattr(action_handler, 'params') else (None, None)
+                    if x is not None and y is not None:
+                        pyautogui.rightClick(x=x, y=y)
+                        return True
+                elif "mouse_move" in action_name:
+                    x, y = action_handler.params.get("x", None), action_handler.params.get("y", None) if hasattr(action_handler, 'params') else (None, None)
+                    if x is not None and y is not None:
+                        pyautogui.moveTo(x=x, y=y)
+                        return True
+                        
+                # Handle keyboard actions
+                elif action_name.startswith("key_"):
+                    key = action_name[4:]  # Remove "key_" prefix
+                    if len(key) == 1 or key.lower() in ["up", "down", "left", "right", "enter", "tab"]:
+                        pyautogui.press(key)
+                        return True
             
             # If we get here, try to call execute() if it exists
             if hasattr(action_handler, 'execute'):
@@ -934,9 +993,16 @@ class DiscoveryEnvironment(VisionGuidedCS2Environment):
                 return
                 
             action_handler = self.action_handlers[action]
+            
+            # Get action name
+            action_name = action_handler.name if hasattr(action_handler, 'name') else "unknown"
+            
+            # Show on-screen display of the action
+            self._show_action_osd(action_name)
+            
+            # For mouse actions, show a brief highlight
             if hasattr(action_handler, 'name') and "mouse" in action_handler.name:
-                # For mouse actions, show a brief highlight
-                x, y = action_handler.params.get("x", None), action_handler.params.get("y", None)
+                x, y = action_handler.params.get("x", None), action_handler.params.get("y", None) if hasattr(action_handler, 'params') else (None, None)
                 if x is not None and y is not None:
                     # Move to position first
                     current_x, current_y = pyautogui.position()
@@ -945,8 +1011,106 @@ class DiscoveryEnvironment(VisionGuidedCS2Environment):
                     # Return to original position if needed
                     if "move" not in action_handler.name:
                         pyautogui.moveTo(current_x, current_y, duration=0.1)
+            
+            # For keyboard actions, show a visual indicator
+            elif any(key_action in action_name for key_action in ["key_", "ctrl_", "shift_", "alt_"]):
+                # Get screen dimensions
+                screen_width, screen_height = pyautogui.size()
+                
+                # Save the current mouse position
+                current_x, current_y = pyautogui.position()
+                
+                # Create a visual indicator for keyboard action
+                # Move to bottom right corner temporarily to show the action
+                indicator_x = screen_width - 100
+                indicator_y = screen_height - 100
+                
+                # Move to indicator position
+                pyautogui.moveTo(indicator_x, indicator_y, duration=0.1)
+                
+                # Do a brief circle motion to indicate a keyboard action
+                start_time = time.time()
+                radius = 20
+                while time.time() - start_time < 0.3:  # 0.3 seconds of animation
+                    angle = (time.time() - start_time) * 20  # Speed of circle
+                    x = indicator_x + radius * np.cos(angle)
+                    y = indicator_y + radius * np.sin(angle)
+                    pyautogui.moveTo(x, y, duration=0.01)
+                
+                # Return to original position
+                pyautogui.moveTo(current_x, current_y, duration=0.1)
         except Exception as e:
             self.logger.warning(f"Error showing action feedback: {str(e)}")
+    
+    def _show_action_osd(self, action_name: str):
+        """
+        Display the action name as an on-screen display
+        
+        Args:
+            action_name: Name of the action to display
+        """
+        try:
+            # Capture current screen
+            screen = pyautogui.screenshot()
+            screen_np = np.array(screen)
+            screen_np = cv2.cvtColor(screen_np, cv2.COLOR_RGB2BGR)
+            
+            # Add action name text
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            text = f"ACTION: {action_name}"
+            text_size = cv2.getTextSize(text, font, 1, 2)[0]
+            
+            # Position at top right of screen
+            x = screen_np.shape[1] - text_size[0] - 20
+            y = 50
+            
+            # Draw background rectangle
+            cv2.rectangle(
+                screen_np,
+                (x - 10, y - 40),
+                (x + text_size[0] + 10, y + 10),
+                (0, 0, 0),
+                -1
+            )
+            
+            # Draw text
+            cv2.putText(
+                screen_np,
+                text,
+                (x, y),
+                font,
+                1,
+                (0, 255, 0),
+                2,
+                cv2.LINE_AA
+            )
+            
+            # Save the annotated screen temporarily
+            timestamp = int(time.time() * 1000)
+            osd_path = os.path.join(self.debug_dir, f"action_osd_{timestamp}.png")
+            cv2.imwrite(osd_path, screen_np)
+            
+            # Clean up older OSD images to prevent disk usage buildup
+            self._cleanup_osd_images()
+            
+        except Exception as e:
+            self.logger.warning(f"Error showing on-screen display: {str(e)}")
+    
+    def _cleanup_osd_images(self):
+        """Clean up older OSD images to prevent disk usage buildup"""
+        try:
+            osd_files = [f for f in os.listdir(self.debug_dir) if f.startswith("action_osd_")]
+            # Sort by creation time (oldest first)
+            osd_files.sort()
+            # Keep only the latest 20 images
+            if len(osd_files) > 20:
+                for old_file in osd_files[:-20]:
+                    try:
+                        os.remove(os.path.join(self.debug_dir, old_file))
+                    except:
+                        pass
+        except Exception as e:
+            self.logger.warning(f"Error cleaning up OSD images: {str(e)}")
     
     def _log_action(self, action: int):
         """
@@ -978,7 +1142,21 @@ class DiscoveryEnvironment(VisionGuidedCS2Environment):
         try:
             # Run menu exploration
             self.logger.info("Exploring random menu")
+            
+            # Check if menu_explorer exists
+            if not hasattr(self, 'menu_explorer') or self.menu_explorer is None:
+                self.logger.warning("Menu explorer not available")
+                obs = self._get_observation()
+                return obs, -0.1, False, False, {"stats": self.stats, "error": "Menu explorer not available"}
+                
+            # Try to explore a random menu
             result = self.menu_explorer.explore_random_menu()
+            
+            # Handle case where result is None
+            if result is None:
+                self.logger.warning("Menu exploration returned None")
+                obs = self._get_observation()
+                return obs, -0.1, False, False, {"stats": self.stats, "error": "Menu exploration failed"}
             
             # Update stats
             if result.get("success", False):
@@ -1002,18 +1180,30 @@ class DiscoveryEnvironment(VisionGuidedCS2Environment):
         except Exception as e:
             self.logger.error(f"Error in discovery action: {str(e)}")
             obs = self._get_dummy_observation()
+            # Make sure obs is a dictionary with the expected keys
+            if not isinstance(obs, dict):
+                obs = {
+                    'population': np.array([0.0], dtype=np.float32),
+                    'happiness': np.array([0.0], dtype=np.float32),
+                    'budget_balance': np.array([0.0], dtype=np.float32),
+                    'traffic': np.array([0.0], dtype=np.float32)
+                }
             return obs, -0.2, False, False, {"stats": self.stats, "error": str(e)}
     
-    def _get_dummy_observation(self) -> np.ndarray:
+    def _get_dummy_observation(self) -> Dict[str, np.ndarray]:
         """
         Create a dummy observation when regular observation fails
         
         Returns:
-            A placeholder observation
+            A placeholder observation dictionary
         """
-        # Create a black observation with correct shape
-        shape = self.observation_space.shape
-        return np.zeros(shape, dtype=np.uint8)
+        # Create a dictionary with zero values for all expected metrics
+        return {
+            'population': np.array([0.0], dtype=np.float32),
+            'happiness': np.array([0.0], dtype=np.float32),
+            'budget_balance': np.array([0.0], dtype=np.float32),
+            'traffic': np.array([0.0], dtype=np.float32)
+        }
         
     def _get_observation(self) -> Dict[str, np.ndarray]:
         """

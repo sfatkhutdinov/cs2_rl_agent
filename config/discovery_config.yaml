@@ -87,7 +87,7 @@ features_extractor_config:
 
 # Training configuration
 training_config:
-  total_timesteps: 500000  # Total number of timesteps for training
+  total_timesteps: 1000  # Reduced for faster testing
   log_interval: 10  # Log interval in timesteps
   save_interval: 20000  # Save interval in timesteps
   eval_interval: 50000  # Evaluation interval in timesteps
