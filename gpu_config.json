@@ -1,0 +1,11 @@
+{
+    "gpu_enabled": true,
+    "cuda_device": 0,
+    "tensorflow_memory_growth": true,
+    "pytorch_memory_config": "max_split_size_mb:512",
+    "environment_variables": {
+        "CUDA_VISIBLE_DEVICES": "0",
+        "TF_FORCE_GPU_ALLOW_GROWTH": "true",
+        "TF_GPU_ALLOCATOR": "cuda_malloc_async"
+    }
+}

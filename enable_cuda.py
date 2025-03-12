@@ -146,4 +146,12 @@ if __name__ == "__main__":
     is_working = verify_cuda()
     
     logger.info("\nTo enable CUDA in your code, add this line BEFORE importing PyTorch or TensorFlow:")
-    logger.info("import enable_cuda") 
+    logger.info("import enable_cuda")     if torch.cuda.is_available(): 
+        print(f"GPU Device: {torch.cuda.get_device_name(0)}") 
+except ImportError: 
+    print("PyTorch not installed") 
+try: 
+    import tensorflow as tf 
+    print(f"TensorFlow GPU devices: {tf.config.list_physical_devices('GPU')}") 
+except ImportError: 
+    print("TensorFlow not installed") 
