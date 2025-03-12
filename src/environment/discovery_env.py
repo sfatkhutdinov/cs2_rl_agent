@@ -11,6 +11,8 @@ import threading
 from typing import Dict, Any, Tuple, List, Optional, Union
 import pyautogui  # Add this import to handle direct actions
 import cv2
+import winsound  # For audio feedback
+from tkinter import Tk, Label, BOTH, TOP, X  # For overlay window
 
 from src.environment.vision_guided_env import VisionGuidedCS2Environment
 from src.interface.ollama_vision_interface import OllamaVisionInterface
@@ -59,6 +61,15 @@ class DiscoveryEnvironment(VisionGuidedCS2Environment):
         self.tutorial_frequency = tutorial_frequency
         self.random_action_frequency = random_action_frequency
         self.exploration_randomness = exploration_randomness
+        
+        # Create overlay window for action feedback
+        self.overlay_window = None
+        self.overlay_label = None
+        self.setup_overlay_window()
+        
+        # Action display duration in seconds
+        self.action_display_duration = 2.0
+        self.current_action_thread = None
         
         # Track discovered elements
         self.discovered_ui_elements = []
@@ -313,6 +324,108 @@ class DiscoveryEnvironment(VisionGuidedCS2Environment):
         self.action_delay = base_env_config.get("action_delay", 0.5)  # seconds between actions
         
         self.logger.info(f"Discovery environment initialized with action feedback: {self.show_action_feedback}")
+    
+    def setup_overlay_window(self):
+        """Create a semi-transparent overlay window to display actions"""
+        try:
+            # Create the overlay window
+            self.overlay_window = Tk()
+            self.overlay_window.title("Agent Actions")
+            self.overlay_window.geometry("300x100+10+10")  # Width x Height + X + Y
+            self.overlay_window.attributes("-alpha", 0.7)  # Make it semi-transparent
+            self.overlay_window.attributes("-topmost", True)  # Keep on top
+            self.overlay_window.configure(bg="black")
+            self.overlay_window.overrideredirect(True)  # Remove window border
+            
+            # Create the label for displaying actions
+            self.overlay_label = Label(
+                self.overlay_window, 
+                text="AGENT READY", 
+                fg="lime",
+                bg="black",
+                font=("Arial", 16, "bold")
+            )
+            self.overlay_label.pack(fill=BOTH, expand=True, padx=10, pady=10)
+            
+            # Start a separate thread to update the overlay window
+            self.overlay_thread = threading.Thread(target=self.update_overlay, daemon=True)
+            self.overlay_thread.start()
+            
+            # Log successful creation
+            if self.logger:
+                self.logger.info("Action overlay window created successfully")
+                
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"Error creating overlay window: {str(e)}")
+    
+    def update_overlay(self):
+        """Background thread to update the overlay window"""
+        try:
+            while True:
+                # Update the window to keep it responsive
+                if self.overlay_window:
+                    try:
+                        self.overlay_window.update()
+                    except:
+                        # Window may have been closed
+                        break
+                time.sleep(0.1)
+        except:
+            # Thread may be terminated when program exits
+            pass
+    
+    def display_action(self, action_name: str, color: str = "lime"):
+        """Display an action in the overlay and play a sound based on action type"""
+        if self.overlay_window and self.overlay_label:
+            try:
+                # Update the overlay text
+                self.overlay_label.config(text=action_name, fg=color)
+                
+                # Play a sound based on action type
+                self.play_action_sound(action_name)
+                
+                # Schedule clearing the text after a delay
+                if self.current_action_thread:
+                    # Cancel previous thread if it exists
+                    if hasattr(self.current_action_thread, "cancel"):
+                        self.current_action_thread.cancel()
+                
+                # Schedule resetting the text
+                self.current_action_thread = threading.Timer(
+                    self.action_display_duration, 
+                    lambda: self.overlay_label.config(text="", fg="lime") if self.overlay_label else None
+                )
+                self.current_action_thread.daemon = True
+                self.current_action_thread.start()
+            except Exception as e:
+                if self.logger:
+                    self.logger.warning(f"Error updating overlay: {str(e)}")
+    
+    def play_action_sound(self, action_name: str):
+        """Play a sound based on the action type"""
+        try:
+            # Determine which sound to play based on action type
+            if "key" in action_name or "ctrl" in action_name or "shift" in action_name:
+                # Keyboard action sound (higher pitch)
+                winsound.Beep(1000, 100)  # 1000 Hz for 100ms
+            elif "click" in action_name or "mouse" in action_name:
+                # Mouse action sound (medium pitch)
+                winsound.Beep(800, 100)  # 800 Hz for 100ms
+            elif "zoom" in action_name or "pan" in action_name or "rotate" in action_name:
+                # Camera action sound (lower pitch)
+                winsound.Beep(600, 100)  # 600 Hz for 100ms
+            elif "explore" in action_name:
+                # Exploration action sound (double beep)
+                winsound.Beep(900, 50)
+                time.sleep(0.05)
+                winsound.Beep(1200, 50)
+            else:
+                # Default sound for other actions
+                winsound.Beep(700, 100)  # 700 Hz for 100ms
+        except Exception as e:
+            if self.logger:
+                self.logger.debug(f"Error playing action sound: {str(e)}")
     
     def _discover_ui_elements(self) -> Dict[str, Any]:
         """
@@ -1000,19 +1113,48 @@ class DiscoveryEnvironment(VisionGuidedCS2Environment):
             # Show on-screen display of the action
             self._show_action_osd(action_name)
             
-            # For mouse actions, show a brief highlight
+            # Update overlay with action name
+            action_display_text = f"ACTION: {action_name.upper()}"
+            self.display_action(action_display_text)
+            
+            # For mouse actions, show a more distinctive highlight
             if hasattr(action_handler, 'name') and "mouse" in action_handler.name:
                 x, y = action_handler.params.get("x", None), action_handler.params.get("y", None) if hasattr(action_handler, 'params') else (None, None)
                 if x is not None and y is not None:
-                    # Move to position first
+                    # Save current mouse position
                     current_x, current_y = pyautogui.position()
+                    
+                    # Move to position with a more noticeable animation
+                    pyautogui.moveTo(current_x, current_y)  # Ensure we start from current position
+                    
+                    # Make more distinct movement - move in small "Z" pattern first
+                    mid_x = (current_x + x) / 2
+                    mid_y = (current_y + y) / 2
+                    
+                    # Z pattern movement
+                    pyautogui.moveTo(mid_x - 20, mid_y - 20, duration=0.1)
+                    pyautogui.moveTo(mid_x + 20, mid_y - 20, duration=0.1)
+                    pyautogui.moveTo(mid_x - 20, mid_y + 20, duration=0.1)
+                    pyautogui.moveTo(mid_x + 20, mid_y + 20, duration=0.1)
+                    
+                    # Finally move to target
                     pyautogui.moveTo(x, y, duration=0.2)
+                    
+                    # Quick highlight circle around target
+                    start_time = time.time()
+                    radius = 10
+                    while time.time() - start_time < 0.3:  # 0.3 seconds of animation
+                        angle = (time.time() - start_time) * 20  # Speed of circle
+                        circle_x = x + radius * np.cos(angle)
+                        circle_y = y + radius * np.sin(angle)
+                        pyautogui.moveTo(circle_x, circle_y, duration=0.01)
+                    
                     time.sleep(0.1)
                     # Return to original position if needed
                     if "move" not in action_handler.name:
                         pyautogui.moveTo(current_x, current_y, duration=0.1)
             
-            # For keyboard actions, show a visual indicator
+            # For keyboard actions, show a more distinctive visual indicator
             elif any(key_action in action_name for key_action in ["key_", "ctrl_", "shift_", "alt_"]):
                 # Get screen dimensions
                 screen_width, screen_height = pyautogui.size()
@@ -1025,17 +1167,84 @@ class DiscoveryEnvironment(VisionGuidedCS2Environment):
                 indicator_x = screen_width - 100
                 indicator_y = screen_height - 100
                 
-                # Move to indicator position
+                # Move to indicator position with a more distinct pattern
+                pyautogui.moveTo(indicator_x - 40, indicator_y - 40, duration=0.1)
+                pyautogui.moveTo(indicator_x + 40, indicator_y - 40, duration=0.1)
                 pyautogui.moveTo(indicator_x, indicator_y, duration=0.1)
                 
-                # Do a brief circle motion to indicate a keyboard action
+                # Do a larger, more visible circle motion to indicate a keyboard action
                 start_time = time.time()
-                radius = 20
-                while time.time() - start_time < 0.3:  # 0.3 seconds of animation
+                radius = 30  # Increased from 20
+                while time.time() - start_time < 0.4:  # 0.4 seconds of animation (increased from 0.3)
                     angle = (time.time() - start_time) * 20  # Speed of circle
                     x = indicator_x + radius * np.cos(angle)
                     y = indicator_y + radius * np.sin(angle)
                     pyautogui.moveTo(x, y, duration=0.01)
+                
+                # Do a quick "key press" motion - move down and up
+                pyautogui.moveTo(indicator_x, indicator_y + 10, duration=0.1)
+                pyautogui.moveTo(indicator_x, indicator_y - 10, duration=0.1)
+                
+                # Return to original position
+                pyautogui.moveTo(current_x, current_y, duration=0.1)
+                
+            # For camera actions, show distinctive movement
+            elif any(cam_action in action_name for cam_action in ["zoom", "pan", "rotate", "tilt"]):
+                # Get screen dimensions
+                screen_width, screen_height = pyautogui.size()
+                
+                # Save the current mouse position
+                current_x, current_y = pyautogui.position()
+                
+                # Move to center of screen
+                center_x, center_y = screen_width // 2, screen_height // 2
+                pyautogui.moveTo(center_x, center_y, duration=0.1)
+                
+                # Different movements based on camera action type
+                if "zoom" in action_name:
+                    # Zoom in/out motion - spiral in or out
+                    start_time = time.time()
+                    radius_start = 50
+                    radius_end = 10 if "in" in action_name else 100
+                    duration = 0.5
+                    
+                    while time.time() - start_time < duration:
+                        progress = (time.time() - start_time) / duration
+                        angle = progress * 4 * 3.14159  # 2 full rotations
+                        current_radius = radius_start + progress * (radius_end - radius_start)
+                        x = center_x + current_radius * np.cos(angle)
+                        y = center_y + current_radius * np.sin(angle)
+                        pyautogui.moveTo(x, y, duration=0.01)
+                
+                elif "pan" in action_name:
+                    # Pan motion - move in direction
+                    distance = 80
+                    if "left" in action_name:
+                        pyautogui.moveTo(center_x - distance, center_y, duration=0.2)
+                    elif "right" in action_name:
+                        pyautogui.moveTo(center_x + distance, center_y, duration=0.2)
+                    elif "up" in action_name:
+                        pyautogui.moveTo(center_x, center_y - distance, duration=0.2)
+                    elif "down" in action_name:
+                        pyautogui.moveTo(center_x, center_y + distance, duration=0.2)
+                    
+                    # Move back to center
+                    pyautogui.moveTo(center_x, center_y, duration=0.1)
+                
+                elif "rotate" in action_name:
+                    # Rotation motion - arc movement
+                    start_time = time.time()
+                    radius = 60
+                    duration = 0.5
+                    start_angle = 0
+                    end_angle = 3.14159 if "left" in action_name else -3.14159
+                    
+                    while time.time() - start_time < duration:
+                        progress = (time.time() - start_time) / duration
+                        angle = start_angle + progress * (end_angle - start_angle)
+                        x = center_x + radius * np.cos(angle)
+                        y = center_y + radius * np.sin(angle)
+                        pyautogui.moveTo(x, y, duration=0.01)
                 
                 # Return to original position
                 pyautogui.moveTo(current_x, current_y, duration=0.1)
@@ -1386,6 +1595,13 @@ class DiscoveryEnvironment(VisionGuidedCS2Environment):
     
     def close(self) -> None:
         """Close the environment and save discovery data."""
+        # Close overlay window if it exists
+        if self.overlay_window:
+            try:
+                self.overlay_window.destroy()
+            except:
+                pass
+        
         # Save discovered UI elements
         try:
             with open(os.path.join(self.debug_dir, "discovered_ui_elements.json"), "w") as f:
