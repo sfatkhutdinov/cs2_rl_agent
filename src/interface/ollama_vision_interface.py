@@ -12,8 +12,96 @@ import json
 import datetime
 import pyautogui
 import random
+import hashlib
+import io
+from collections import OrderedDict
+import threading
+from dataclasses import dataclass, field
 
 from .auto_vision_interface import AutoVisionInterface
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+@dataclass
+class ResponseCache:
+    """Cache for Ollama responses to reduce API calls"""
+    max_size: int = 10
+    cache: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    cache_keys: List[str] = field(default_factory=list)
+    
+    def get_key(self, prompt: str, image: np.ndarray) -> str:
+        """Generate a unique key for the prompt and image
+        
+        Args:
+            prompt: The text prompt
+            image: The image data
+            
+        Returns:
+            A unique key for cache lookup
+        """
+        # Use a simple hash of the prompt and the first/last few pixels of the image
+        # This avoids storing full images while still providing a reasonable uniqueness
+        prompt_hash = hash(prompt)
+        
+        # Sample a few pixels from the image for fingerprinting
+        if image.size > 0:
+            # Take 10 pixels from different parts of the image
+            h, w = image.shape[:2]
+            pixels = []
+            for i in range(5):
+                y = int((i * h) / 5)
+                x = int((i * w) / 5)
+                if y < h and x < w:
+                    pixel = image[y, x]
+                    pixels.extend(pixel)
+            
+            image_hash = hash(tuple(pixels))
+        else:
+            image_hash = 0
+            
+        return f"{prompt_hash}_{image_hash}"
+    
+    def get(self, prompt: str, image: np.ndarray) -> Optional[Dict[str, Any]]:
+        """Get a cached response if available
+        
+        Args:
+            prompt: The text prompt
+            image: The image data
+            
+        Returns:
+            Cached response or None
+        """
+        key = self.get_key(prompt, image)
+        if key in self.cache:
+            logger.debug(f"Cache hit for key: {key}")
+            return self.cache[key]
+        return None
+    
+    def add(self, prompt: str, image: np.ndarray, response: Dict[str, Any]):
+        """Add a response to the cache
+        
+        Args:
+            prompt: The text prompt
+            image: The image data
+            response: The API response to cache
+        """
+        key = self.get_key(prompt, image)
+        
+        # If cache is full, remove oldest entry
+        if len(self.cache) >= self.max_size and key not in self.cache:
+            oldest_key = self.cache_keys.pop(0)
+            self.cache.pop(oldest_key, None)
+            
+        # Add new entry
+        self.cache[key] = response
+        
+        # Add key to tracking list if it's new
+        if key not in self.cache_keys:
+            self.cache_keys.append(key)
+        
+        logger.debug(f"Added response to cache, size: {len(self.cache)}")
 
 class OllamaVisionInterface(AutoVisionInterface):
     """
@@ -96,6 +184,17 @@ class OllamaVisionInterface(AutoVisionInterface):
         self.logger.info(f"Ollama Vision Interface initialized with model: {self.ollama_model}")
         self.logger.info(f"Debug logs and screenshots will be saved to: {self.debug_dir}")
         
+        # Set up caching
+        self.response_cache = ResponseCache(max_size=self.ollama_config.get("vision_cache_size", 10))
+        
+        # Connection and retry settings
+        self.timeout = 30  # Default timeout in seconds
+        self.max_retries = 3
+        self.retry_delay = 1.0  # Initial retry delay in seconds
+        
+        # Thread lock for API requests
+        self.api_lock = threading.Lock()
+        
     def query_ollama(self, image: np.ndarray, prompt: str) -> Dict[str, Any]:
         """
         Send an image to Ollama vision model and get a response.
@@ -107,6 +206,12 @@ class OllamaVisionInterface(AutoVisionInterface):
         Returns:
             Dictionary containing the model's response
         """
+        # Check cache first
+        cached_response = self.response_cache.get(prompt, image)
+        if cached_response is not None:
+            self.logger.debug("Using cached response")
+            return cached_response
+        
         # Convert from BGR to RGB
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         
@@ -180,6 +285,8 @@ class OllamaVisionInterface(AutoVisionInterface):
                     if self.ollama_config.get("json_validation", True):
                         parsed = self.extract_json_from_response(result)
                         if "error" not in parsed:
+                            # Cache the result
+                            self.response_cache.add(prompt, image, result)
                             return result
                         elif attempt < max_retries - 1:
                             self.logger.warning(f"Invalid JSON on attempt {attempt + 1}, retrying...")
@@ -633,4 +740,204 @@ class OllamaVisionInterface(AutoVisionInterface):
                 f.write(json.dumps(tooltip_info) + "\n")
                 
         except Exception as e:
-            self.logger.error(f"Error saving tooltip data: {str(e)}") 
+            self.logger.error(f"Error saving tooltip data: {str(e)}")
+
+    def capture_screen(self) -> Optional[np.ndarray]:
+        """
+        Capture the current screen.
+        
+        Returns:
+            Screenshot as a numpy array or None if capture fails
+        """
+        try:
+            # Use pyautogui for screen capture
+            import pyautogui
+            screenshot = pyautogui.screenshot()
+            return np.array(screenshot)
+        except Exception as e:
+            self.logger.error(f"Failed to capture screen: {str(e)}")
+            return None
+
+    def query_vision_model(self, prompt: str, image: np.ndarray, 
+                           temperature: float = 0.7, enforce_json: bool = False,
+                           timeout: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Query the vision model with a prompt and image.
+        
+        Args:
+            prompt: Text prompt to send to the model
+            image: Image as a numpy array
+            temperature: Model temperature setting
+            enforce_json: Whether to enforce JSON output
+            timeout: Timeout for API call in seconds
+            
+        Returns:
+            Model response
+        """
+        # First check if we have a cached response
+        cached_response = self.response_cache.get(prompt, image)
+        if cached_response is not None:
+            self.logger.info("Using cached vision model response")
+            return cached_response
+        
+        # If not in cache, make the API call
+        if enforce_json:
+            # Add JSON formatting to the prompt
+            prompt = f"{prompt}\n\nYou must respond in valid JSON format only."
+        
+        # Prepare and send the request
+        response = self.query_ollama(prompt, image, temperature, timeout)
+        
+        # Add to cache if successful
+        if "error" not in response:
+            self.response_cache.add(prompt, image, response)
+        
+        return response
+
+    def query_ollama(self, prompt: str, image: np.ndarray, 
+                    temperature: float = 0.7, timeout: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Send a query to the Ollama API with an image.
+        
+        Args:
+            prompt: Text prompt
+            image: Image as numpy array
+            temperature: Model temperature
+            timeout: Timeout in seconds
+            
+        Returns:
+            API response as a dictionary
+        """
+        if timeout is None:
+            timeout = self.timeout
+            
+        # Get API lock to avoid multiple simultaneous requests
+        with self.api_lock:
+            # Encode the image as base64
+            try:
+                if image is None or (isinstance(image, np.ndarray) and image.size == 0):
+                    self.logger.error("Cannot query Ollama with empty image")
+                    return {"error": "Empty image provided"}
+                
+                # Convert numpy array to PIL Image and then to base64
+                img = Image.fromarray(image)
+                buffered = BytesIO()
+                img.save(buffered, format="JPEG", quality=85)  # Lower quality to reduce size
+                img_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+                
+                # Prepare the request payload
+                payload = {
+                    "model": self.ollama_model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {
+                        "temperature": temperature
+                    },
+                    "images": [img_base64]
+                }
+                
+                # Use exponential backoff for retries
+                retry_count = 0
+                current_delay = self.retry_delay
+                
+                while retry_count <= self.max_retries:
+                    try:
+                        self.logger.info(f"Querying Ollama API (attempt {retry_count + 1})")
+                        start_time = time.time()
+                        
+                        # Make the API request
+                        response = requests.post(
+                            self.ollama_url,
+                            json=payload,
+                            timeout=timeout
+                        )
+                        
+                        query_time = time.time() - start_time
+                        self.logger.info(f"Ollama query completed in {query_time:.2f} seconds")
+                        
+                        # Check for successful response
+                        if response.status_code == 200:
+                            try:
+                                result = response.json()
+                                return self._process_ollama_response(result)
+                            except json.JSONDecodeError:
+                                self.logger.error("Failed to parse Ollama API response as JSON")
+                                return {"error": "Invalid JSON in response"}
+                        else:
+                            self.logger.error(f"Ollama API error: {response.status_code} - {response.text}")
+                            
+                            # Specific handling based on error code
+                            if response.status_code == 400:
+                                # Might be an issue with the prompt or image
+                                return {"error": f"API error: {response.status_code} - {response.text}"}
+                            elif response.status_code in [429, 503]:
+                                # Rate limiting or server overload, retry with backoff
+                                pass
+                            elif response.status_code >= 500:
+                                # Server error, retry with backoff
+                                pass
+                            else:
+                                # Other errors, may not be retryable
+                                return {"error": f"API error: {response.status_code} - {response.text}"}
+                    
+                    except requests.exceptions.Timeout:
+                        self.logger.error(f"Timeout after {timeout} seconds when querying Ollama")
+                    except requests.exceptions.ConnectionError:
+                        self.logger.error("Connection error when querying Ollama")
+                    except Exception as e:
+                        self.logger.error(f"Error querying Ollama: {str(e)}")
+                        return {"error": f"Failed to query Ollama: {str(e)}"}
+                    
+                    # If we've reached the max retries, break out and return error
+                    if retry_count >= self.max_retries:
+                        break
+                    
+                    # Exponential backoff with jitter for retry
+                    sleep_time = current_delay * (1 + random.random())
+                    self.logger.info(f"Retrying in {sleep_time:.1f} seconds (attempt {retry_count + 1}/{self.max_retries})")
+                    time.sleep(sleep_time)
+                    current_delay *= 2  # Exponential backoff
+                    retry_count += 1
+                
+                # If we're here, all retries failed
+                return {"error": "Max retries exceeded when querying Ollama"}
+                
+            except Exception as e:
+                self.logger.error(f"Error in query_ollama: {str(e)}")
+                return {"error": str(e)}
+    
+    def _process_ollama_response(self, response: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Process and clean up the Ollama API response.
+        
+        Args:
+            response: The API response
+            
+        Returns:
+            Processed response
+        """
+        try:
+            if "response" not in response:
+                return {"error": "No response field in Ollama result"}
+                
+            text_response = response.get("response", "")
+            
+            # Try to extract JSON from the response if it contains JSON
+            try:
+                # Look for JSON within the response
+                json_start = text_response.find('{')
+                json_end = text_response.rfind('}')
+                
+                if json_start != -1 and json_end != -1 and json_end > json_start:
+                    potential_json = text_response[json_start:json_end + 1]
+                    result = json.loads(potential_json)
+                    return result
+            except json.JSONDecodeError:
+                # If JSON extraction failed, just return the raw response
+                pass
+                
+            return {"text": text_response}
+            
+        except Exception as e:
+            self.logger.error(f"Error processing Ollama response: {str(e)}")
+            return {"error": f"Failed to process response: {str(e)}"} 

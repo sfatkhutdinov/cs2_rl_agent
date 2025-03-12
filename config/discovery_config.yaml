@@ -1,10 +1,10 @@
 # Configuration for discovery-based RL agent in Cities: Skylines 2
 
 # Discovery settings
-discovery_frequency: 0.4       # How often to try discovering UI elements
-tutorial_frequency: 0.3        # How often to look for tutorials
-random_action_frequency: 0.2   # How often to perform completely random actions
-exploration_randomness: 0.6    # How random exploration should be (0=focused, 1=random)
+discovery_frequency: 0.2       # Reduced from 0.4 to prevent overwhelming Ollama
+tutorial_frequency: 0.15       # Reduced from 0.3 to minimize Ollama calls
+random_action_frequency: 0.4   # Increased from 0.2 to encourage more direct random exploration
+exploration_randomness: 0.8    # Increased from 0.6 to see more variety in actions
 
 # Paths for models, logs, and data
 paths:
@@ -12,6 +12,93 @@ paths:
   logs: "logs"
   data: "data"
   debug: "debug"
+
+# Base environment configuration
+base_env_config:
+  window_name: "Cities: Skylines II"  # Name of game window to focus on
+  resolution: [1920, 1080]  # Default resolution, will be auto-detected if possible
+  observation_shape: [224, 224, 3]  # Observation shape for RL (H, W, C)
+  observation_normalization: true  # Whether to normalize observations
+  action_space_size: 25  # Default size, will be updated based on available actions
+  frame_skip: 2  # Number of frames to skip between actions
+  max_episode_steps: 5000  # Maximum number of steps per episode
+  use_metrics: true  # Whether to use game metrics in observations
+  use_vision_guidance: true  # Whether to use vision guidance for exploration
+  vision_guidance_frequency: 0.15  # How often to use vision guidance (0-1)
+  action_delay: 0.8  # Delay between actions in seconds
+  show_action_feedback: true  # Whether to show visual feedback for actions
+  logging_level: "INFO"  # Logging level (DEBUG, INFO, WARNING, ERROR)
+
+# Ollama configuration
+ollama_config:
+  model: "granite3.2-vision:latest"  # Vision model to use
+  url: "http://localhost:11434/api/generate"  # Ollama API endpoint
+  timeout: 30  # API timeout in seconds
+  max_retries: 3  # Maximum number of retries for API calls
+  vision_cache_size: 30  # Size of vision response cache
+  cache_ttl: 300  # Cache time-to-live in seconds
+  max_tokens: 1024  # Maximum tokens in response
+  temperature: 0.7  # Model temperature
+
+# Discovery environment configuration
+discovery_config:
+  discovery_frequency: 0.2  # How often to use discovery actions (0-1)
+  use_menu_explorer: true  # Whether to use the menu explorer
+  menu_exploration_frequency: 0.1  # How often to explore menus (0-1)
+  use_ui_discovery: true  # Whether to use UI discovery
+  ui_discovery_frequency: 0.1  # How often to discover UI elements (0-1)
+  max_discoveries_per_episode: 10  # Maximum number of discoveries per episode
+  save_discoveries: true  # Whether to save discovered UI elements
+  discovery_file: "discoveries.json"  # File to save discoveries to
+
+# PPO agent configuration
+ppo_config:
+  learning_rate: 0.0003
+  n_steps: 512  # Steps per batch
+  batch_size: 64  # Batch size for training
+  n_epochs: 10  # Number of epochs per update
+  gamma: 0.99  # Discount factor
+  gae_lambda: 0.95  # GAE lambda parameter
+  clip_range: 0.2  # Clipping parameter for PPO
+  clip_range_vf: null  # Value function clipping parameter
+  normalize_advantage: true  # Whether to normalize advantages
+  ent_coef: 0.01  # Entropy coefficient
+  vf_coef: 0.5  # Value function coefficient
+  max_grad_norm: 0.5  # Maximum gradient norm
+  use_sde: false  # Whether to use state-dependent exploration
+  sde_sample_freq: -1  # State-dependent exploration sampling frequency
+  target_kl: null  # Target KL divergence threshold
+
+# Feature extractor configuration
+features_extractor_config:
+  features_dim: 512  # Dimension of extracted features
+  cnn_extractor_kwargs:
+    features_dim: 256  # CNN features dimension
+    n_filters: [32, 64, 64, 64]  # CNN filter sizes
+    kernel_sizes: [8, 4, 3, 3]  # CNN kernel sizes
+    strides: [4, 2, 1, 1]  # CNN strides
+    paddings: [0, 0, 0, 0]  # CNN paddings
+    activation_fn: "ReLU"  # CNN activation function
+    normalize_images: true  # Whether to normalize images
+  mlp_extractor_kwargs:
+    net_arch: [256, 256]  # MLP architecture
+    activation_fn: "Tanh"  # MLP activation function
+    device: "auto"  # Device to use (auto, cpu, cuda)
+
+# Training configuration
+training_config:
+  total_timesteps: 500000  # Total number of timesteps for training
+  log_interval: 10  # Log interval in timesteps
+  save_interval: 20000  # Save interval in timesteps
+  eval_interval: 50000  # Evaluation interval in timesteps
+  n_eval_episodes: 5  # Number of episodes for evaluation
+  save_path: "models"  # Path to save models
+  log_path: "logs"  # Path to save logs
+  eval_deterministic: false  # Whether to use deterministic policy for evaluation
+  reset_num_timesteps: false  # Whether to reset number of timesteps at start
+  progress_bar: true  # Whether to show progress bar
+  checkpoint_interval: 20000  # Checkpoint interval in timesteps
+  eval_log_path: "logs/evaluations"  # Path to save evaluation logs
 
 # Basic environment settings
 environment:
@@ -34,6 +121,7 @@ environment:
   max_steps: 500               # Maximum steps per episode
   interface_port: 8001         # Port for game connection
   use_fallback_mode: true      # Enable fallback mode for robustness
+  visual_feedback: true        # Add visual feedback when taking actions
   reward_shaping:
     money_weight: 1.0
     happiness_weight: 2.0
@@ -84,14 +172,18 @@ observation:
 # Vision guidance settings
 vision:
   enabled: true                    # Enable vision guidance
-  vision_guidance_frequency: 0.4   # Frequency of vision guidance
+  vision_guidance_frequency: 0.1   # Reduced from 0.4 to prevent Ollama overload
   ollama_model: "granite3.2-vision:latest"  # Vision model to use
   ollama_url: "http://localhost:11434/api/generate"  # Ollama API URL
-  response_timeout: 60             # Timeout for vision model responses in seconds (increased from 15 to 60)
-  max_tokens: 1024                 # Maximum tokens for vision model responses
+  response_timeout: 30             # Reduced from 60 to fail faster when Ollama is unresponsive
+  max_tokens: 800                  # Reduced from 1024 to get faster responses
   temperature: 0.7                 # Temperature for vision model
   debug_mode: true                 # Enable debug mode for vision
   debug_dir: "debug/vision"        # Directory for vision debug output
+  vision_cache_size: 10            # Add caching to reduce redundant Ollama calls
+  max_retry_attempts: 2            # Maximum number of retry attempts (reduced from 3)
+  retry_delay: 2                   # Seconds to wait between retries
+  fallback_to_random: true         # Use random actions when vision fails
 
 # Training parameters
 training:
@@ -121,8 +213,9 @@ training:
 
 # Policy network configuration
 model:
+  features_extractor_class: "CombinedExtractor"  # Uses CombinedExtractor for Dict observations
   features_extractor_kwargs:
-    features_dim: 512          # Feature dimension for the CNN
+    cnn_output_dim: 512        # Output dimension for the CNN part of the extractor
   net_arch:
     pi: [256, 256]             # Policy network architecture
     vf: [256, 256]             # Value function network architecture 

@@ -38,13 +38,13 @@ class CS2Environment(gym.Env):
         
         # Create the appropriate interface
         if interface_type == "api":
-                self.interface = APIInterface(config)
+            self.interface = APIInterface(config)
             self.logger.info("Using API interface.")
         elif interface_type == "vision":
-                    self.interface = VisionInterface(config)
+            self.interface = VisionInterface(config)
             self.logger.info("Using vision interface.")
         elif interface_type == "auto_vision":
-                self.interface = AutoVisionInterface(config)
+            self.interface = AutoVisionInterface(config)
             self.logger.info("Using auto vision interface.")
         elif interface_type == "ollama_vision":
             self.interface = OllamaVisionInterface(config)
@@ -66,8 +66,8 @@ class CS2Environment(gym.Env):
                     self.logger.warning("Failed to connect to the game. Using fallback mode.")
                     self._setup_fallback_mode()
                 else:
-            self.logger.error("Failed to connect to the game.")
-            raise RuntimeError("Failed to connect to the game.")
+                    self.logger.error("Failed to connect to the game.")
+                    raise RuntimeError("Failed to connect to the game.")
         except Exception as e:
             if self.use_fallback:
                 self.logger.warning(f"Error connecting to the game: {str(e)}. Using fallback mode.")
@@ -147,7 +147,7 @@ class CS2Environment(gym.Env):
         if include_visual:
             # Try to get image size or use defaults
             if "image_size" in obs_config:
-            height, width = obs_config["image_size"]
+                height, width = obs_config["image_size"]
             else:
                 height = obs_config.get("screenshot_height", 224)
                 width = obs_config.get("screenshot_width", 224)
@@ -168,9 +168,9 @@ class CS2Environment(gym.Env):
             spaces_dict["visual"] = visual_space
         
         # Metrics observation
-        if obs_config["include_metrics"]:
+        if obs_config.get("include_metrics", True):
             # Define a space for each metric
-            metrics = obs_config["metrics"]
+            metrics = obs_config.get("metrics", ["population", "happiness", "budget_balance", "traffic"])
             for metric in metrics:
                 spaces_dict[metric] = spaces.Box(
                     low=-float('inf'), high=float('inf'),
@@ -180,28 +180,43 @@ class CS2Environment(gym.Env):
         # Use Dict space if we have multiple observation components
         if len(spaces_dict) > 1:
             self.observation_space = spaces.Dict(spaces_dict)
-        else:
+        elif len(spaces_dict) == 1:
             # If only visual or only metrics, use that directly
             self.observation_space = list(spaces_dict.values())[0]
+        else:
+            # Fallback to a simple box space if no observation components
+            self.observation_space = spaces.Box(low=-10.0, high=10.0, shape=(10,), dtype=np.float32)
+            self.logger.warning("No observation components specified, using default Box space")
     
     def _setup_action_space(self):
         """Set up the action space."""
-        action_config = self.config["environment"]["action_space"]
+        action_config = self.config.get("environment", {}).get("action_space", {})
         
         # Collect all possible actions
         all_actions = []
         
         # Add zoning actions
-        for zone_type in action_config["zone"]:
+        for zone_type in action_config.get("zone", []):
             all_actions.append({"type": "zone", "zone_type": zone_type})
         
         # Add infrastructure actions
-        for infra_type in action_config["infrastructure"]:
+        for infra_type in action_config.get("infrastructure", []):
             all_actions.append({"type": "infrastructure", "infra_type": infra_type})
         
         # Add budget actions
-        for budget_action in action_config["budget"]:
+        for budget_action in action_config.get("budget", []):
             all_actions.append({"type": "budget", "budget_action": budget_action})
+        
+        # If no actions defined, create some defaults
+        if not all_actions:
+            self.logger.warning("No actions defined in config, using defaults")
+            all_actions = [
+                {"type": "zone", "zone_type": "residential"},
+                {"type": "zone", "zone_type": "commercial"},
+                {"type": "zone", "zone_type": "industrial"},
+                {"type": "infrastructure", "infra_type": "road"},
+                {"type": "budget", "budget_action": "increase_tax"}
+            ]
         
         # Define the action space as a Discrete space with one action per option
         self.action_space = spaces.Discrete(len(all_actions))
@@ -334,18 +349,10 @@ class CS2Environment(gym.Env):
         
     def _get_action_type(self, action: int) -> str:
         """Determine the action type based on the action index."""
-        action_space = self.config["environment"]["action_space"]
-        
-        # Count the total actions in each category
-        total_zone = len(action_space.get("zone", []))
-        total_infrastructure = len(action_space.get("infrastructure", []))
-        
-        if action < total_zone:
-            return "zone"
-        elif action < total_zone + total_infrastructure:
-            return "infrastructure"
-        else:
-            return "budget"
+        if action >= len(self.action_mapping):
+            return "unknown"
+            
+        return self.action_mapping[action].get("type", "unknown")
     
     def reset(self, seed=None, options=None):
         """
@@ -433,16 +440,19 @@ class CS2Environment(gym.Env):
         Returns:
             Observation dictionary or array
         """
-        obs_config = self.config["environment"]["observation_space"]
+        obs_config = self.config.get("environment", {}).get("observation_space", {})
+        if not obs_config:
+            obs_config = self.config.get("observation", {})
+            
         observation = {}
         
         # Visual observation
-        if obs_config["include_visual"]:
+        if obs_config.get("include_visual", False):
             visual_obs = game_state.get("visual_observation", None)
             if visual_obs is None:
                 # Create an empty image if no visual observation is available
-                height, width = obs_config["image_size"]
-                channels = 1 if obs_config["grayscale"] else 3
+                height, width = obs_config.get("image_size", (224, 224))
+                channels = 1 if obs_config.get("grayscale", False) else 3
                 visual_obs = np.zeros((height, width, channels), dtype=np.uint8)
             else:
                 # Ensure correct number of channels (convert RGBA to RGB if needed)
@@ -452,7 +462,7 @@ class CS2Environment(gym.Env):
                     visual_obs = visual_obs[:, :, :3]
                 
                 # Ensure correct image size
-                target_height, target_width = obs_config["image_size"]
+                target_height, target_width = obs_config.get("image_size", (224, 224))
                 if visual_obs.shape[0] != target_height or visual_obs.shape[1] != target_width:
                     # Resize the image if needed
                     try:
@@ -465,7 +475,7 @@ class CS2Environment(gym.Env):
                                          anti_aliasing=True, preserve_range=True).astype(np.uint8)
                 
                 # Convert to grayscale if configured
-                if obs_config["grayscale"] and len(visual_obs.shape) == 3 and visual_obs.shape[2] > 1:
+                if obs_config.get("grayscale", False) and len(visual_obs.shape) == 3 and visual_obs.shape[2] > 1:
                     if visual_obs.shape[2] == 3:  # RGB
                         # Use standard RGB to grayscale conversion
                         visual_obs = np.dot(visual_obs[..., :3], [0.2989, 0.5870, 0.1140])
@@ -479,11 +489,12 @@ class CS2Environment(gym.Env):
             observation["visual"] = visual_obs
         
         # Metrics observation
-        if obs_config["include_metrics"]:
+        if obs_config.get("include_metrics", True):
             metrics = game_state.get("metrics", {})
             self.last_metrics = metrics.copy()  # Store for reward calculation
             
-            for metric in obs_config["metrics"]:
+            metrics_list = obs_config.get("metrics", ["population", "happiness", "budget_balance", "traffic"])
+            for metric in metrics_list:
                 value = metrics.get(metric, 0.0)
                 observation[metric] = np.array([value], dtype=np.float32)
         
@@ -503,7 +514,7 @@ class CS2Environment(gym.Env):
         Returns:
             Calculated reward
         """
-        reward_config = self.config["environment"].get("reward_function", {})
+        reward_config = self.config.get("environment", {}).get("reward_function", {})
         metrics = game_state.get("metrics", {})
         
         reward = 0.0
@@ -593,56 +604,6 @@ class CS2Environment(gym.Env):
             if traffic < 30:
                 reward += 0.1
         
-        # Land use balance reward
-        if all(key in metrics for key in ["residential_ratio", "commercial_ratio", "industrial_ratio"]):
-            # Calculate balance - closer to ideal ratios gets higher reward
-            # Ideal: ~60% residential, ~25% commercial, ~15% industrial
-            residential_diff = abs(metrics["residential_ratio"] - 0.6)
-            commercial_diff = abs(metrics["commercial_ratio"] - 0.25)
-            industrial_diff = abs(metrics["industrial_ratio"] - 0.15)
-            
-            balance_score = 1.0 - (residential_diff + commercial_diff + industrial_diff)
-            reward += balance_score * 0.1  # Reward for good zone balance
-            
-        # MAP EXPLORATION REWARD - track and reward exploring new areas
-        if hasattr(self, 'current_state') and 'camera_position' in self.current_state:
-            camera_pos = self.current_state['camera_position']
-            if isinstance(camera_pos, (list, tuple)) and len(camera_pos) >= 2:
-                # Get position and convert to grid coordinates (0-9 range for 10x10 grid)
-                x, y = camera_pos[0], camera_pos[1]
-                
-                # Convert world coordinates to grid indices (adjust these based on your map size)
-                map_size = 16000  # Typical Cities:Skylines 2 map size in world units
-                grid_x = min(9, max(0, int(x / map_size * 10)))
-                grid_y = min(9, max(0, int(y / map_size * 10)))
-                
-                # If this is a newly explored cell, give reward
-                if not self.exploration_grid[grid_x, grid_y] and self.exploration_reward_given < self.max_exploration_reward:
-                    self.exploration_grid[grid_x, grid_y] = True
-                    
-                    # Calculate how much of the map has been explored
-                    explored_percentage = np.sum(self.exploration_grid) / 100.0
-                    
-                    # Give a reward for discovering new areas, with diminishing returns
-                    exploration_reward = 0.2
-                    reward += exploration_reward
-                    self.exploration_reward_given += exploration_reward
-                    
-                    # Log exploration progress
-                    if explored_percentage % 0.2 < 0.01:  # Log at 20%, 40%, etc.
-                        self.logger.info(f"Map exploration progress: {explored_percentage:.1%}")
-        
-        # Apply bankruptcy penalty 
-        if "budget_balance" in metrics and metrics["budget_balance"] < 0:
-            # Scale penalty by severity of deficit
-            deficit_severity = abs(metrics["budget_balance"]) / max(1, metrics.get("population", 100))
-            reward += min(0, -0.1 - deficit_severity) * reward_config.get("bankruptcy_penalty", 1.0)
-        
-        # Apply pollution penalty
-        if "pollution" in metrics:
-            pollution_penalty = -metrics["pollution"] * reward_config.get("pollution_penalty", 0.05)
-            reward += pollution_penalty
-        
         # Success bonuses for milestone achievements
         if "population" in metrics and "population" in self.last_metrics:
             # Population milestone rewards - more frequent early milestones
@@ -667,11 +628,10 @@ class CS2Environment(gym.Env):
                 return self._get_fallback_observation()
             
             # Get the current game state
-        game_state = self.interface.get_game_state()
+            game_state = self.interface.get_game_state()
             
             # Extract observation from game state
-        return self._extract_observation(game_state)
-            
+            return self._extract_observation(game_state)
         except Exception as e:
             self.logger.warning(f"Error getting observation: {str(e)}")
             return self._get_fallback_observation()
@@ -692,8 +652,15 @@ class CS2Environment(gym.Env):
         Returns:
             Dictionary of current game metrics
         """
-        game_state = self.interface.get_game_state()
-        return game_state.get("metrics", {}) 
+        if hasattr(self, 'in_fallback_mode') and self.in_fallback_mode:
+            return self.fallback_metrics.copy()
+            
+        try:
+            game_state = self.interface.get_game_state()
+            return game_state.get("metrics", {})
+        except Exception as e:
+            self.logger.warning(f"Error getting metrics: {str(e)}")
+            return {}
     
     def _action_to_dict(self, action: int) -> Dict[str, Any]:
         """
@@ -705,38 +672,13 @@ class CS2Environment(gym.Env):
         Returns:
             Dictionary representation of the action
         """
-        action_space = self.config["environment"]["action_space"]
-        
-        # Count the total actions in each category
-        zone_actions = action_space.get("zone", [])
-        infrastructure_actions = action_space.get("infrastructure", [])
-        budget_actions = action_space.get("budget", [])
-        
-        # Determine which category this action belongs to
-        total_zone = len(zone_actions)
-        total_infrastructure = len(infrastructure_actions)
-        
-        if action < total_zone:
-            # Zone action
-            action_name = zone_actions[action]
-            return {"type": "zone", "zone_type": action_name}
+        # Check if action is valid
+        if action < 0 or action >= len(self.action_mapping):
+            self.logger.warning(f"Invalid action index: {action}")
+            return {"type": "no_op"}
             
-        elif action < total_zone + total_infrastructure:
-            # Infrastructure action
-            infra_index = action - total_zone
-            action_name = infrastructure_actions[infra_index]
-            return {"type": "infrastructure", "infra_type": action_name}
-            
-        else:
-            # Budget action
-            budget_index = action - (total_zone + total_infrastructure)
-            if budget_index < len(budget_actions):
-                action_name = budget_actions[budget_index]
-                return {"type": "budget", "budget_action": action_name}
-            else:
-                # Fallback for invalid action indices
-                self.logger.warning(f"Invalid action index: {action}")
-                return {"type": "budget", "budget_action": "no_op"}
+        # Return the mapped action
+        return self.action_mapping[action]
     
     def _get_fallback_observation(self):
         """
@@ -752,8 +694,8 @@ class CS2Environment(gym.Env):
             for key, space in self.observation_space.spaces.items():
                 if key == "visual":
                     # Create a blank image
-                    image_size = self.config["environment"]["observation_space"].get("image_size", [84, 84])
-                    grayscale = self.config["environment"]["observation_space"].get("grayscale", False)
+                    image_size = self.config.get("environment", {}).get("observation_space", {}).get("image_size", [84, 84])
+                    grayscale = self.config.get("environment", {}).get("observation_space", {}).get("grayscale", False)
                     
                     if grayscale:
                         # Grayscale image
@@ -762,27 +704,14 @@ class CS2Environment(gym.Env):
                         # Color image
                         observation[key] = np.zeros((image_size[0], image_size[1], 3), dtype=np.uint8)
                 
-                elif key == "metrics":
+                elif key in ["population", "happiness", "budget_balance", "traffic"]:
                     # Use fallback metrics if available
                     if hasattr(self, 'fallback_metrics') and self.fallback_metrics:
-                        metrics = []
-                        
-                        # Get the metrics list from the config
-                        metrics_list = self.config["environment"]["observation_space"].get("metrics", [])
-                        
-                        # Add each metric value
-                        for metric in metrics_list:
-                            if metric in self.fallback_metrics:
-                                metrics.append(self.fallback_metrics[metric])
-                            else:
-                                metrics.append(0.0)
-                                
-                        # Convert to numpy array
-                        observation[key] = np.array(metrics, dtype=np.float32)
+                        value = self.fallback_metrics.get(key, 0.0)
+                        observation[key] = np.array([value], dtype=np.float32)
                     else:
                         # Create zeros if no fallback metrics
                         observation[key] = np.zeros(space.shape, dtype=np.float32)
-                        
                 else:
                     # For any other keys, use zeros
                     observation[key] = np.zeros(space.shape, dtype=space.dtype)

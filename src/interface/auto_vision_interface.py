@@ -7,6 +7,7 @@ import mss
 from typing import Dict, Any, Tuple, List, Optional
 import logging
 import os
+import win32gui
 from .base_interface import BaseInterface
 
 
@@ -27,6 +28,11 @@ class AutoVisionInterface(BaseInterface):
         """
         super().__init__(config)
         self.logger = logging.getLogger("AutoVisionInterface")
+        
+        # Game window handle
+        self.game_window_handle = config.get("game_window_handle", None)
+        if self.game_window_handle:
+            self.logger.info(f"Using provided game window handle: {self.game_window_handle}")
         
         # Windows-specific setup for Tesseract
         if os.name == 'nt':  # Windows
@@ -176,6 +182,15 @@ class AutoVisionInterface(BaseInterface):
             True if connection was successful, False otherwise
         """
         try:
+            # Set the game window as foreground
+            if self.game_window_handle:
+                try:
+                    self.logger.info(f"Setting game window with handle {self.game_window_handle} as foreground")
+                    win32gui.SetForegroundWindow(self.game_window_handle)
+                    time.sleep(0.5)  # Allow time for window to come to foreground
+                except Exception as e:
+                    self.logger.warning(f"Failed to set game window as foreground: {e}")
+            
             # Take a screenshot to verify we can capture the screen
             screenshot = self.sct.grab(self.monitor)
             if screenshot is None:
@@ -190,11 +205,13 @@ class AutoVisionInterface(BaseInterface):
                 self.logger.info("Successfully connected to Cities: Skylines 2 via auto vision interface.")
                 return True
             else:
-                self.logger.error("Failed to detect any UI elements. Make sure the game is running and visible.")
-                return False
-            
+                self.logger.warning("Connected but couldn't detect UI elements. Game might not be running properly.")
+                # Return true anyway - the game might be in a menu or another screen
+                self.connected = True
+                return True
         except Exception as e:
-            self.logger.error(f"Failed to connect: {str(e)}")
+            self.logger.error(f"Failed to connect to game: {e}")
+            self.connected = False
             return False
     
     def disconnect(self) -> None:

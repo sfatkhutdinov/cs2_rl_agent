@@ -9,10 +9,13 @@ import os
 import time
 import threading
 from typing import Dict, Any, Tuple, List, Optional, Union
+import pyautogui  # Add this import to handle direct actions
 
 from src.environment.vision_guided_env import VisionGuidedCS2Environment
 from src.interface.ollama_vision_interface import OllamaVisionInterface
-from src.utils.window_utils import focus_game_window, refocus_if_needed
+from src.interface.window_manager import WindowManager
+from src.actions.action_handler import ActionHandler
+from src.actions.menu_explorer import MenuExplorer
 
 
 class DiscoveryEnvironment(VisionGuidedCS2Environment):
@@ -45,6 +48,41 @@ class DiscoveryEnvironment(VisionGuidedCS2Environment):
             exploration_randomness: How random exploration should be (0=focused, 1=random)
             logger: Logger instance
         """
+        # Set up debug directory first to avoid attribute errors
+        self.debug_dir = os.path.join("logs", "discovery_debug")
+        os.makedirs(self.debug_dir, exist_ok=True)
+        
+        # Initialize tracking variables
+        self.total_steps = 0  # Track total steps taken in the environment
+        self.discovery_frequency = discovery_frequency
+        self.tutorial_frequency = tutorial_frequency
+        self.random_action_frequency = random_action_frequency
+        self.exploration_randomness = exploration_randomness
+        
+        # Track discovered elements
+        self.discovered_ui_elements = []
+        self.discovered_actions = []
+        self.discovered_tutorials = []
+        self.current_tutorial = None
+        self.tutorial_progress = 0
+        self.discovery_phase = "exploration"  # Can be "exploration", "tutorial", "targeted"
+        self.current_action_sequence = []
+        self.successful_action_sequences = []
+        
+        # Statistics tracking
+        self.stats = {
+            "discoveries_made": 0,
+            "tutorials_started": 0,
+            "tutorials_completed": 0,
+            "successful_sequences": 0,
+            "total_rewards": 0,
+            "total_steps": 0,
+            "menus_explored": 0,
+            "ui_elements_discovered": 0,
+            "successful_interactions": 0,
+            "failed_interactions": 0,
+        }
+        
         # Simplify the action space in the base config to focus on generic actions
         base_env_config = base_env_config or {}
         simplified_action_space = {
@@ -246,42 +284,34 @@ class DiscoveryEnvironment(VisionGuidedCS2Environment):
         
         self.logger = logger or logging.getLogger("DiscoveryEnv")
         
-        # Set up discovery-specific parameters
-        self.discovery_frequency = discovery_frequency
-        self.tutorial_frequency = tutorial_frequency
-        self.exploration_randomness = exploration_randomness
-        
-        # Discovery state
-        self.discovered_ui_elements = {}
-        self.discovered_actions = {}
-        self.discovered_tutorials = set()
-        self.current_tutorial = None
-        self.tutorial_progress = 0
-        self.discovery_phase = "initial"  # initial, exploration, focused_learning
-        
-        # Action memory
-        self.successful_action_sequences = []
-        self.current_action_sequence = []
-        self.action_results = {}
-        
-        # Create debug directory
-        self.debug_dir = os.path.join("logs", "discovery_debug")
-        os.makedirs(self.debug_dir, exist_ok=True)
-        
-        # Statistics for tracking learning progress
-        self.stats = {
-            "discovered_ui_elements": 0,
-            "discovered_actions": 0,
-            "completed_tutorials": 0,
-            "successful_sequences": 0,
-            "exploration_steps": 0,
-            "focused_learning_steps": 0
-        }
-        
         self.logger.info("Discovery-based environment initialized")
         
+        # Initialize action statistics
+        self.action_stats = {}
+        
+        # Initialize window manager
+        self.window_manager = WindowManager(window_name=base_env_config.get("window_name", "Cities: Skylines II"))
+        
         # Focus on the game window at startup
-        focus_game_window()
+        if self.window_manager:
+            self.window_manager.focus_window()
+        
+        # Create action log file
+        self.action_log_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
+            "logs", 
+            f"action_log_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        )
+        os.makedirs(os.path.dirname(self.action_log_path), exist_ok=True)
+        with open(self.action_log_path, "w") as f:
+            f.write(f"Action Log - Started at {datetime.datetime.now()}\n")
+            f.write("=" * 80 + "\n")
+        
+        # Configure action feedback
+        self.show_action_feedback = base_env_config.get("show_action_feedback", True)
+        self.action_delay = base_env_config.get("action_delay", 0.5)  # seconds between actions
+        
+        self.logger.info(f"Discovery environment initialized with action feedback: {self.show_action_feedback}")
     
     def _discover_ui_elements(self) -> Dict[str, Any]:
         """
@@ -447,7 +477,7 @@ class DiscoveryEnvironment(VisionGuidedCS2Environment):
                         element["times_clicked"] = 0
                         element["success_rate"] = 0.0
                         self.discovered_ui_elements[element_id] = element
-                        self.stats["discovered_ui_elements"] += 1
+                        self.stats["discoveries_made"] += 1
                     else:
                         self.discovered_ui_elements[element_id]["times_seen"] += 1
             
@@ -539,7 +569,6 @@ class DiscoveryEnvironment(VisionGuidedCS2Environment):
                     "effects": [effect_info],
                     "discovery_time": time.time()
                 }
-                self.stats["discovered_actions"] += 1
             else:
                 self.discovered_actions[action_name]["times_used"] += 1
                 self.discovered_actions[action_name]["average_reward"] = (
@@ -576,7 +605,7 @@ class DiscoveryEnvironment(VisionGuidedCS2Environment):
         
         # Sometimes try a completely random action for exploration
         if random.random() < self.exploration_randomness:
-            self.stats["exploration_steps"] += 1
+            self.stats["total_steps"] += 1
             return self.action_space.sample()
         
         # Discover UI elements
@@ -642,11 +671,11 @@ class DiscoveryEnvironment(VisionGuidedCS2Environment):
                 # Get the action index
                 action_idx = self._get_action_idx_by_name(best_action)
                 if action_idx is not None:
-                    self.stats["focused_learning_steps"] += 1
+                    self.stats["total_steps"] += 1
                     return action_idx
         
         # Default to a random action
-        self.stats["exploration_steps"] += 1
+        self.stats["total_steps"] += 1
         return self.action_space.sample()
     
     def _get_tutorial_guided_action(self) -> int:
@@ -772,48 +801,350 @@ class DiscoveryEnvironment(VisionGuidedCS2Environment):
         Returns:
             Tuple of (observation, reward, terminated, truncated, info)
         """
-        # Decide if we should override with a discovery action
-        if random.random() < self.discovery_frequency:
-            discovery_action = self._get_discovery_action()
-            
-            # Log that we're using a discovery action
-            self.logger.debug(f"Using discovery action {discovery_action} instead of {action}")
-            
-            # If the discovery action directly manipulated the game, use a dummy action
-            if discovery_action is None:
-                discovery_action = 0
-            
-            action = discovery_action
+        # Log action for debugging
+        self.logger.info(f"Taking action: {action} - {self.action_handlers[action].name if action < len(self.action_handlers) else 'unknown'}")
         
-        # Take the step using parent implementation
-        obs, reward, terminated, truncated, info = super().step(action)
+        # Increment total steps counter
+        self.total_steps += 1
+        self.stats["total_steps"] += 1
         
-        # If the episode ended successfully, save the current action sequence
-        if terminated and reward > 0:
-            if self.current_action_sequence:
-                self.successful_action_sequences.append({
-                    "actions": self.current_action_sequence.copy(),
-                    "total_reward": reward,
-                    "timestamp": time.time()
-                })
-                self.current_action_sequence = []
-                self.stats["successful_sequences"] += 1
-                
-                # Save successful sequences to file for later analysis
-                self._save_successful_sequence(self.successful_action_sequences[-1])
+        # Ensure we have focus on the game window
+        self._ensure_game_focus()
         
-        # Add discovery info to the info dict
-        info["discovery"] = {
-            "discovered_ui_elements": len(self.discovered_ui_elements),
-            "discovered_actions": len(self.discovered_actions),
-            "completed_tutorials": len(self.discovered_tutorials),
-            "current_tutorial": self.current_tutorial,
-            "tutorial_progress": self.tutorial_progress,
-            "discovery_phase": self.discovery_phase,
-            "discovery_stats": self.stats
-        }
+        # Log the action to file
+        self._log_action(action)
+        
+        # Add visual feedback for the action if enabled
+        if self.show_action_feedback:
+            self._show_action_feedback(action)
+        
+        # Handle discovery actions specially
+        if action >= len(self.action_handlers) - 1 and hasattr(self, 'menu_explorer'):
+            return self._handle_discovery_action()
+        
+        # Execute the action directly when possible
+        success = self._execute_direct_action(action)
+        
+        # If direct execution failed, fall back to regular action execution
+        if not success:
+            try:
+                self.action_handlers[action].execute()
+            except Exception as e:
+                self.logger.error(f"Error executing action {action}: {str(e)}")
+                self.stats["failed_interactions"] += 1
+        else:
+            self.stats["successful_interactions"] += 1
+        
+        # Wait a bit to see the results of the action
+        time.sleep(self.action_delay)
+        
+        # Get the new observation
+        try:
+            obs = self._get_observation()
+        except Exception as e:
+            self.logger.error(f"Failed to get observation after action: {str(e)}")
+            obs = self._get_dummy_observation()
+        
+        # Calculate reward and check terminal conditions
+        reward = self._calculate_reward()
+        terminated = False
+        truncated = False
+        info = {"stats": self.stats}
         
         return obs, reward, terminated, truncated, info
+    
+    def _ensure_game_focus(self):
+        """Make sure the game window has focus before taking action"""
+        try:
+            if self.window_manager and not self.window_manager.is_window_focused():
+                self.logger.info("Game window not focused, attempting to focus")
+                self.window_manager.focus_window()
+                time.sleep(0.5)  # Wait for focus to take effect
+        except Exception as e:
+            self.logger.warning(f"Error when checking window focus: {str(e)}")
+    
+    def _execute_direct_action(self, action: int) -> bool:
+        """
+        Attempt to execute action directly using pyautogui
+        
+        Args:
+            action: Action index
+            
+        Returns:
+            True if action was executed successfully, False otherwise
+        """
+        try:
+            if action >= len(self.action_handlers):
+                return False
+                
+            action_handler = self.action_handlers[action]
+            
+            # Check if action_handler is a namedtuple Action
+            if isinstance(action_handler, tuple) and hasattr(action_handler, '_fields') and 'action_fn' in action_handler._fields:
+                # It's a namedtuple Action, call the action_fn
+                action_handler.action_fn()
+                return True
+            
+            # Otherwise, try to get the name and parameters
+            action_name = action_handler.name if hasattr(action_handler, 'name') else "unknown"
+            
+            # Handle mouse actions
+            if "mouse_click" in action_name:
+                x, y = action_handler.params.get("x", None), action_handler.params.get("y", None) if hasattr(action_handler, 'params') else (None, None)
+                if x is not None and y is not None:
+                    pyautogui.click(x=x, y=y)
+                    return True
+            elif "mouse_right_click" in action_name:
+                x, y = action_handler.params.get("x", None), action_handler.params.get("y", None) if hasattr(action_handler, 'params') else (None, None)
+                if x is not None and y is not None:
+                    pyautogui.rightClick(x=x, y=y)
+                    return True
+            elif "mouse_move" in action_name:
+                x, y = action_handler.params.get("x", None), action_handler.params.get("y", None) if hasattr(action_handler, 'params') else (None, None)
+                if x is not None and y is not None:
+                    pyautogui.moveTo(x=x, y=y)
+                    return True
+                    
+            # Handle keyboard actions
+            elif action_name.startswith("key_"):
+                key = action_name[4:]  # Remove "key_" prefix
+                if len(key) == 1 or key.lower() in ["up", "down", "left", "right", "enter", "esc", "escape", "tab"]:
+                    pyautogui.press(key)
+                    return True
+            
+            # If we get here, try to call execute() if it exists
+            if hasattr(action_handler, 'execute'):
+                action_handler.execute()
+                return True
+                
+            return False
+        except Exception as e:
+            self.logger.error(f"Error in direct action execution: {str(e)}")
+            return False
+    
+    def _show_action_feedback(self, action: int):
+        """
+        Show visual feedback for the action being taken
+        
+        Args:
+            action: Action index
+        """
+        try:
+            if action >= len(self.action_handlers):
+                return
+                
+            action_handler = self.action_handlers[action]
+            if hasattr(action_handler, 'name') and "mouse" in action_handler.name:
+                # For mouse actions, show a brief highlight
+                x, y = action_handler.params.get("x", None), action_handler.params.get("y", None)
+                if x is not None and y is not None:
+                    # Move to position first
+                    current_x, current_y = pyautogui.position()
+                    pyautogui.moveTo(x, y, duration=0.2)
+                    time.sleep(0.1)
+                    # Return to original position if needed
+                    if "move" not in action_handler.name:
+                        pyautogui.moveTo(current_x, current_y, duration=0.1)
+        except Exception as e:
+            self.logger.warning(f"Error showing action feedback: {str(e)}")
+    
+    def _log_action(self, action: int):
+        """
+        Log action to file for tracking
+        
+        Args:
+            action: Action index
+        """
+        try:
+            action_name = "unknown"
+            if action < len(self.action_handlers):
+                action_handler = self.action_handlers[action]
+                if hasattr(action_handler, 'name'):
+                    action_name = action_handler.name
+                    
+            with open(self.action_log_path, "a") as f:
+                timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+                f.write(f"[{timestamp}] Step {self.total_steps}: Action {action} - {action_name}\n")
+        except Exception as e:
+            self.logger.warning(f"Failed to log action: {str(e)}")
+    
+    def _handle_discovery_action(self) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
+        """
+        Handle special discovery actions like menu exploration
+        
+        Returns:
+            observation, reward, terminated, truncated, info
+        """
+        try:
+            # Run menu exploration
+            self.logger.info("Exploring random menu")
+            result = self.menu_explorer.explore_random_menu()
+            
+            # Update stats
+            if result.get("success", False):
+                self.stats["menus_explored"] += 1
+                elements_found = len(result.get("elements", []))
+                self.stats["ui_elements_discovered"] += elements_found
+                self.logger.info(f"Menu exploration successful, found {elements_found} elements")
+                reward = 0.5 + (0.1 * elements_found)  # Reward for exploration
+            else:
+                self.logger.info("Menu exploration failed")
+                reward = -0.1  # Small penalty for failed exploration
+                
+            # Get observation
+            obs = self._get_observation()
+            terminated = False
+            truncated = False
+            info = {"stats": self.stats, "menu_exploration": result}
+            
+            return obs, reward, terminated, truncated, info
+            
+        except Exception as e:
+            self.logger.error(f"Error in discovery action: {str(e)}")
+            obs = self._get_dummy_observation()
+            return obs, -0.2, False, False, {"stats": self.stats, "error": str(e)}
+    
+    def _get_dummy_observation(self) -> np.ndarray:
+        """
+        Create a dummy observation when regular observation fails
+        
+        Returns:
+            A placeholder observation
+        """
+        # Create a black observation with correct shape
+        shape = self.observation_space.shape
+        return np.zeros(shape, dtype=np.uint8)
+        
+    def _get_observation(self) -> Dict[str, np.ndarray]:
+        """
+        Get the current observation from the environment
+        
+        Returns:
+            Dictionary of observations
+        """
+        try:
+            # Get the base observation from the parent class
+            if hasattr(super(), 'get_observation'):
+                return super().get_observation()
+            
+            # Fallback to using the interface directly
+            if hasattr(self, 'interface') and self.interface is not None:
+                # Get game metrics
+                metrics = {}
+                
+                # Population
+                population = self.interface.get_population()
+                if population is not None:
+                    metrics['population'] = np.array([population], dtype=np.float32)
+                else:
+                    metrics['population'] = np.array([0.0], dtype=np.float32)
+                
+                # Happiness
+                happiness = self.interface.get_happiness()
+                if happiness is not None:
+                    metrics['happiness'] = np.array([happiness], dtype=np.float32)
+                else:
+                    metrics['happiness'] = np.array([0.0], dtype=np.float32)
+                
+                # Budget
+                budget = self.interface.get_budget_balance()
+                if budget is not None:
+                    metrics['budget_balance'] = np.array([budget], dtype=np.float32)
+                else:
+                    metrics['budget_balance'] = np.array([0.0], dtype=np.float32)
+                
+                # Traffic
+                traffic = self.interface.get_traffic()
+                if traffic is not None:
+                    metrics['traffic'] = np.array([traffic], dtype=np.float32)
+                else:
+                    metrics['traffic'] = np.array([0.0], dtype=np.float32)
+                
+                return metrics
+            
+            # If all else fails, return a dummy observation
+            return {
+                'population': np.array([0.0], dtype=np.float32),
+                'happiness': np.array([0.0], dtype=np.float32),
+                'budget_balance': np.array([0.0], dtype=np.float32),
+                'traffic': np.array([0.0], dtype=np.float32)
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error getting observation: {str(e)}")
+            return {
+                'population': np.array([0.0], dtype=np.float32),
+                'happiness': np.array([0.0], dtype=np.float32),
+                'budget_balance': np.array([0.0], dtype=np.float32),
+                'traffic': np.array([0.0], dtype=np.float32)
+            }
+    
+    def _calculate_reward(self) -> float:
+        """
+        Calculate the reward based on the current state
+        
+        Returns:
+            The calculated reward value
+        """
+        try:
+            # Start with a small negative reward to encourage efficiency
+            reward = -0.01
+            
+            # Get current metrics
+            if hasattr(self, 'interface') and self.interface is not None:
+                population = self.interface.get_population() or 0
+                happiness = self.interface.get_happiness() or 0
+                budget = self.interface.get_budget_balance() or 0
+                
+                # Reward for population growth
+                if population > self.stats.get("last_population", 0):
+                    population_increase = population - self.stats.get("last_population", 0)
+                    reward += 0.1 * min(1.0, population_increase / 100.0)  # Cap at 1.0 for large increases
+                
+                # Reward for happiness improvement
+                if happiness > self.stats.get("last_happiness", 0):
+                    happiness_increase = happiness - self.stats.get("last_happiness", 0)
+                    reward += 0.1 * min(1.0, happiness_increase / 10.0)  # Cap at 1.0 for large increases
+                
+                # Reward for budget improvement
+                if budget > self.stats.get("last_budget", 0):
+                    budget_increase = budget - self.stats.get("last_budget", 0)
+                    reward += 0.05 * min(1.0, budget_increase / 1000.0)  # Cap at 1.0 for large increases
+                
+                # Update last metrics
+                self.stats["last_population"] = population
+                self.stats["last_happiness"] = happiness
+                self.stats["last_budget"] = budget
+            
+            # Reward for successful interactions
+            if self.stats.get("successful_interactions", 0) > self.stats.get("last_successful_interactions", 0):
+                reward += 0.05
+                self.stats["last_successful_interactions"] = self.stats.get("successful_interactions", 0)
+            
+            # Reward for discoveries
+            if self.stats.get("ui_elements_discovered", 0) > self.stats.get("last_ui_elements_discovered", 0):
+                elements_discovered = self.stats.get("ui_elements_discovered", 0) - self.stats.get("last_ui_elements_discovered", 0)
+                reward += 0.1 * elements_discovered
+                self.stats["last_ui_elements_discovered"] = self.stats.get("ui_elements_discovered", 0)
+            
+            # Update total rewards
+            self.stats["total_rewards"] += reward
+            
+            return reward
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating reward: {str(e)}")
+            return 0.0
+    
+    @property
+    def action_delay(self) -> float:
+        """Get the delay between actions"""
+        return self._action_delay
+        
+    @action_delay.setter
+    def action_delay(self, value: float):
+        """Set the delay between actions"""
+        self._action_delay = max(0.0, min(5.0, value))  # Clamp between 0 and 5 seconds
     
     def reset(self, **kwargs) -> Tuple[np.ndarray, Dict[str, Any]]:
         """
@@ -842,7 +1173,8 @@ class DiscoveryEnvironment(VisionGuidedCS2Environment):
         }
         
         # Focus the game window
-        focus_game_window()
+        if self.window_manager:
+            self.window_manager.focus_window()
         time.sleep(1)  # Give time for the window to gain focus
         
         return obs, info

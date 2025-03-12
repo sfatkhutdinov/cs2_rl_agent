@@ -246,38 +246,191 @@ class VisionGuidedCS2Environment(AutonomousCS2Environment):
             current_time - self.vision_guidance_cache["timestamp"] < self.vision_cache_ttl
         )
     
-    def _get_vision_guided_action(self) -> int:
-        """Get an action recommendation based on cached vision guidance."""
+    def _get_vision_action(self) -> int:
+        """
+        Get an action based on vision guidance.
+        
+        Returns:
+            Action index suggested by vision
+        """
         try:
-            guidance = self.vision_guidance_cache.get("guidance", {})
+            # Skip vision guidance if not enabled or interface not available
+            if not self._vision_guidance_enabled() or not self._get_vision_interface():
+                return self.action_space.sample()
             
-            if "recommended_actions" in guidance and guidance["recommended_actions"]:
-                # Map recommended actions to available actions
-                action_names = []
-                for recommendation in guidance["recommended_actions"]:
-                    matching_actions = self._find_matching_actions(recommendation)
-                    action_names.extend(matching_actions)
+            # Capture screen
+            vision_interface = self._get_vision_interface()
+            screen = vision_interface.capture_screen()
+            
+            # Add some basic error handling for screen capture
+            if screen is None or (isinstance(screen, np.ndarray) and screen.size == 0):
+                self.logger.warning("Failed to capture screen, using random action")
+                return self.action_space.sample()
+            
+            # Create a vision guidance prompt
+            guidance_prompt = """
+            You are an expert Cities: Skylines 2 player. Look at this screenshot and suggest the best next action.
+            
+            Based on the current state of the game, what would be the most beneficial action to take?
+            Provide your response in JSON format:
+            {
+                "analysis": "brief description of what you see in the game",
+                "recommended_action": "specific action name",
+                "action_reason": "why this action would be beneficial",
+                "is_tutorial_visible": true/false,
+                "tutorial_instruction": "what the tutorial is asking the player to do (if visible)"
+            }
+            
+            Be as specific as possible with your action recommendation.
+            """
+            
+            # Query the vision model
+            result = vision_interface.query_vision_model(
+                prompt=guidance_prompt,
+                image=screen,
+                enforce_json=True
+            )
+            
+            # Handle the case where the result contains an error
+            if isinstance(result, dict) and "error" in result:
+                self.logger.warning(f"Error in vision guidance: {result['error']}")
+                return self.action_space.sample()
+            
+            # Extract the recommended action
+            recommended_action = None
+            if isinstance(result, dict) and "recommended_action" in result:
+                recommended_action = result["recommended_action"]
+                self.logger.info(f"Vision guided action: {recommended_action}")
                 
-                if action_names:
-                    # Select an action with preference for population-focused actions
-                    population_actions = [name for name in action_names if "population" in name]
-                    if population_actions and random.random() < 0.7:  # 70% chance to use population action
-                        selected_action = random.choice(population_actions)
-                    else:
-                        selected_action = random.choice(action_names)
-                        
-                    action_idx = self._get_action_idx_by_name(selected_action)
+                # Log the full analysis for debugging
+                if "analysis" in result:
+                    self.logger.debug(f"Vision analysis: {result['analysis']}")
+                
+                # Handle tutorial instructions if present
+                if result.get("is_tutorial_visible", False) and "tutorial_instruction" in result:
+                    tutorial_instruction = result["tutorial_instruction"]
+                    self.logger.info(f"Tutorial instruction: {tutorial_instruction}")
+                    
+                    # Try to follow tutorial instructions
+                    action_idx = self._map_instruction_to_action(tutorial_instruction)
                     if action_idx is not None:
-                        self.consecutive_vision_attempts += 1
                         return action_idx
             
-            self.consecutive_vision_attempts = 0
-            return self._get_guided_exploratory_action()
+            # Try to map the recommended action to an actual action
+            action_idx = self._map_recommendation_to_action(recommended_action)
+            if action_idx is not None:
+                return action_idx
+                
+            # Fall back to random action if we couldn't map the recommendation
+            return self.action_space.sample()
             
         except Exception as e:
-            self.logger.error(f"Error getting vision-guided action: {str(e)}")
-            self.consecutive_vision_attempts = 0
-            return self._get_guided_exploratory_action()
+            self.logger.error(f"Error in vision guidance: {str(e)}")
+            return self.action_space.sample()
+
+    def _map_recommendation_to_action(self, recommendation: str) -> Optional[int]:
+        """
+        Map a recommended action from vision to an actual action index.
+        
+        Args:
+            recommendation: Recommended action from vision
+            
+        Returns:
+            Action index or None if no mapping found
+        """
+        if not recommendation:
+            return None
+            
+        recommendation = recommendation.lower()
+        
+        # Check for exact action name matches
+        for i, action in enumerate(self.action_handlers):
+            if hasattr(action, 'name') and action.name.lower() == recommendation:
+                return i
+                
+        # Check for partial matches in action names
+        for i, action in enumerate(self.action_handlers):
+            if hasattr(action, 'name') and recommendation in action.name.lower():
+                return i
+                
+        # Check for keyword matches
+        keywords = {
+            "click": ["mouse_click"],
+            "right click": ["mouse_right_click"],
+            "move": ["mouse_move"],
+            "pan left": ["camera_pan_left", "key_left"],
+            "pan right": ["camera_pan_right", "key_right"],
+            "pan up": ["camera_pan_up", "key_up"],
+            "pan down": ["camera_pan_down", "key_down"],
+            "zoom in": ["camera_zoom_in"],
+            "zoom out": ["camera_zoom_out"],
+            "rotate": ["camera_rotate_left", "camera_rotate_right"],
+            "build road": ["key_r"],
+            "place water": ["key_w"],
+            "electricity": ["key_e"],
+            "services": ["key_u"],
+            "residential": ["key_z"],
+            "commercial": ["key_x"],
+            "industrial": ["key_c"],
+            "office": ["key_v"],
+            "menu": ["key_escape"],
+            "confirm": ["key_enter"],
+            "cancel": ["key_escape"],
+            "tab": ["key_tab"]
+        }
+        
+        for keyword, action_names in keywords.items():
+            if keyword in recommendation:
+                for action_name in action_names:
+                    for i, action in enumerate(self.action_handlers):
+                        if hasattr(action, 'name') and action.name == action_name:
+                            return i
+        
+        return None
+        
+    def _map_instruction_to_action(self, instruction: str) -> Optional[int]:
+        """
+        Map a tutorial instruction to an actual action index.
+        
+        Args:
+            instruction: Tutorial instruction
+            
+        Returns:
+            Action index or None if no mapping found
+        """
+        if not instruction:
+            return None
+            
+        instruction = instruction.lower()
+        
+        # Common tutorial instructions and corresponding actions
+        instruction_mappings = {
+            "click": "mouse_click",
+            "select": "mouse_click",
+            "press r": "key_r",
+            "press w": "key_w",
+            "press e": "key_e",
+            "press z": "key_z",
+            "press x": "key_x",
+            "press c": "key_c",
+            "press v": "key_v",
+            "open menu": "key_escape",
+            "confirm": "key_enter",
+            "cancel": "key_escape",
+            "press tab": "key_tab",
+            "press enter": "key_enter",
+            "press escape": "key_escape",
+            "bulldoze": "key_b"
+        }
+        
+        # Check each mapping to see if it's in the instruction
+        for key, action_name in instruction_mappings.items():
+            if key in instruction:
+                for i, action in enumerate(self.action_handlers):
+                    if hasattr(action, 'name') and action.name == action_name:
+                        return i
+        
+        return None
     
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         """Take a step in the environment with optional vision guidance."""
@@ -286,7 +439,7 @@ class VisionGuidedCS2Environment(AutonomousCS2Environment):
         
         # Decide whether to use vision guidance
         if self._should_use_vision_guidance():
-            guided_action = self._get_vision_guided_action()
+            guided_action = self._get_vision_action()
             self.logger.debug(f"Using vision guidance to select action {guided_action} instead of {action}")
             action = guided_action
             is_vision_guided = True
