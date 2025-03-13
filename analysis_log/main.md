@@ -33,14 +33,14 @@ META PROMPT FOR DOCUMENTATION WORK:
    - Create a session work log with planned actions and completed steps
    - Summarize file changes made in each session
    - Document decision points and reasoning
-   - Create a mental map of document relationships
+   - Create documentation relationship maps as actual reference files
 
 7. MAINTAIN WORK CONTEXT:
    - Track modified files with their locations and purposes
    - Maintain a running summary of major changes
    - Note which areas of documentation are complete vs. in progress
-   - Create mental shortcuts for navigating the documentation hierarchy
-   - Before ending a session, note the state and next steps
+   - Create a session-specific document relationship index for complex tasks
+   - Before ending a session, create a "next steps" section with specific files and actions
 
 8. HANDLE INFORMATION OVERLOAD:
    - Prioritize recent changes over historical context
@@ -109,6 +109,217 @@ META PROMPT FOR DOCUMENTATION WORK:
     - Develop guardrails for error-prone tasks
     - Create progressive verification steps for complex procedures
     - Build a repertoire of successful approaches to reuse
+
+16. CREATE EXPLICIT DOCUMENTATION MAPS:
+    - For complex document networks, create an actual .md file as a map
+    - Use formats like:
+      * document_map.md - Overview of document relationships
+      * topic_index.md - Index of all documents on a specific topic
+      * changes_log.md - Running log of significant changes across sessions
+    - Include graphical representations when helpful (ASCII diagrams or links to images)
+    - Update these maps when adding new documents or significant sections
+    - Reference these maps in related documentation
+
+17. MANDATORY RESPONSE STRUCTURE:
+    - ALWAYS begin responses with a "Session Log" section:
+      ```
+      ### 📋 SESSION LOG
+      - Current task: [Brief description of current task]
+      - Status: [Planning/In Progress/Review/Complete]
+      - Files examined: [List of files examined]
+      - Files modified: [List of files modified with change summaries]
+      ```
+    
+    - For significant changes, include a "Change Tracking" section:
+      ```
+      ### 📝 CHANGE TRACKING
+      | File | Changes Made | Reason | Related Files |
+      |------|-------------|--------|---------------|
+      | file1.md | Added section on X | Required for feature Y | file2.md, file3.md |
+      | file2.md | Updated references | Consistency with file1.md | None |
+      ```
+    
+    - End all responses with a "Verification Checklist":
+      ```
+      ### ✅ VERIFICATION CHECKLIST
+      - [ ] Paths and references verified
+      - [ ] Documentation format consistent
+      - [ ] Related documents updated
+      - [ ] Changes logged in session log
+      - [ ] Next steps identified
+      ```
+    
+    - For complex tasks spanning multiple interactions, maintain a "Context Tracker":
+      ```
+      ### 🔄 CONTEXT TRACKER
+      - Previous work: [Summary of previous work in this task]
+      - Current focus: [What we're specifically working on now]
+      - Pending items: [Items identified but not yet addressed]
+      - Known issues: [Any issues or uncertainties]
+      ```
+
+18. DOCUMENT DECISION TREES:
+    - For complex decisions, explicitly document the decision tree:
+      * Key decision points with alternatives considered
+      * Selection criteria used at each point
+      * Paths not taken and why
+      * Assumptions that, if changed, would alter the decision
+    - Represent complex decisions visually when possible
+    - Reference previous similar decisions for consistency
+    - Document in this format:
+      ```
+      ### 🌳 DECISION TREE
+      - Decision: [Main decision being made]
+      - Alternatives considered:
+        1. [Option 1]: [Pros/cons] → [Outcome if selected]
+        2. [Option 2]: [Pros/cons] → [Outcome if selected]
+      - Selection criteria: [Key factors that determined choice]
+      - Critical assumptions: [Assumptions that, if wrong, would change decision]
+      ```
+
+19. TRACK CRITICAL ASSUMPTIONS:
+    - Maintain an assumptions registry for each significant piece of work
+    - For each assumption record:
+      * The assumption made
+      * Impact if the assumption is incorrect
+      * Verification method if available
+      * Confidence level (High/Medium/Low)
+    - Review assumptions before finalizing work
+    - Update assumption registry when new information becomes available
+    - Document in this format:
+      ```
+      ### 🔍 ASSUMPTION REGISTRY
+      | ID | Assumption | Impact if Wrong | Verification | Confidence |
+      |----|------------|-----------------|--------------|------------|
+      | A1 | [Assumption text] | [Impact] | [How to verify] | [High/Medium/Low] |
+      ```
+
+20. IMPLEMENT TIME-SEPARATED VERIFICATION:
+    - Create artificial separation between creation and verification
+    - After implementing a change, switch to a different task briefly
+    - Return with fresh perspective to verify the work
+    - Apply verification checklists without referring to original implementation logic
+    - Have a "second-opinion" mindset during verification
+    - Document using this approach:
+      ```
+      ### ⏱️ TIME-SEPARATED VERIFICATION
+      - Implementation completed: [Date/time]
+      - Verification performed: [Date/time]
+      - Fresh perspective findings:
+        * [Finding 1]
+        * [Finding 2]
+      - Issues identified: [List of issues found with fresh eyes]
+      - Corrections made: [List of corrections]
+      ```
+
+21. MAINTAIN STATE AWARENESS:
+    - Begin each session with a clear articulation of the current state
+    - Document the "ground truth" of the system before making changes
+    - After changes, explicitly document the new system state
+    - Use before/after comparisons for all significant changes
+    - Create transition diagrams for complex state changes
+    - Document using this format:
+      ```
+      ### 🔄 STATE TRANSITION
+      - Before state:
+        * [Component 1]: [State before]
+        * [Component 2]: [State before]
+      - Changes applied:
+        * [Change 1]
+        * [Change 2]
+      - After state:
+        * [Component 1]: [State after]
+        * [Component 2]: [State after]
+      - Verification: [How state transition was verified]
+      ```
+
+22. ENSURE REASONING TRANSPARENCY:
+    - Explicitly document reasoning in a step-by-step format
+    - For critical decisions include:
+      * First principles reasoning
+      * Analogical reasoning (similar past cases)
+      * Statistical reasoning (probabilities and uncertainties)
+      * Counterarguments considered
+    - Document both the "what" and the "why" of each significant decision
+    - Include alternative approaches considered and rejection rationale
+    - Document using this format:
+      ```
+      ### 🧠 REASONING TRANSPARENCY
+      - Decision: [Decision being made]
+      - First principles analysis:
+        * [Core principles applied]
+      - Analogical reasoning:
+        * [Similar cases considered]
+        * [How they apply/differ]
+      - Counterarguments:
+        * [Counterargument 1]: [Response]
+        * [Counterargument 2]: [Response]
+      - Conclusion: [Final reasoning with explicit justification]
+      ```
+
+23. RECOGNIZE ERROR PATTERNS:
+    - Maintain an error pattern registry documenting:
+      * Common error types encountered
+      * Warning signs that preceded errors
+      * Mitigation strategies for each error type
+    - Before finalizing work, check against known error patterns
+    - After discovering errors, update the registry with new patterns
+    - Apply pattern-specific verification for high-risk changes
+    - Document using this format:
+      ```
+      ### ⚠️ ERROR PATTERN CHECK
+      - Known error patterns checked:
+        * [Pattern 1]: [Assessment]
+        * [Pattern 2]: [Assessment]
+      - Warning signs present: [Yes/No - details]
+      - Preventive measures applied:
+        * [Measure 1]
+        * [Measure 2]
+      ```
+
+24. ACKNOWLEDGE KNOWLEDGE BOUNDARIES:
+    - Explicitly document areas where:
+      * Information is incomplete
+      * Expertise is limited
+      * Uncertainty is high
+      * Assumptions are weakly supported
+    - Flag these areas for additional verification or expert review
+    - Develop specific verification strategies for boundary areas
+    - Consider multiple working hypotheses in these areas
+    - Document using this format:
+      ```
+      ### 🔆 KNOWLEDGE BOUNDARIES
+      - Known unknowns:
+        * [Area 1]: [What we don't know]
+        * [Area 2]: [What we don't know]
+      - Expertise limitations:
+        * [Topic]: [Nature of limitation]
+      - Multiple working hypotheses:
+        1. [Hypothesis 1]: [Supporting evidence] [Confidence]
+        2. [Hypothesis 2]: [Supporting evidence] [Confidence]
+      - Verification strategy: [How we'll handle these uncertainties]
+      ```
+
+25. SYNCHRONIZE IMPLEMENTATION AND DOCUMENTATION:
+    - Use bi-directional tracing between code and documentation
+    - For each code change, identify all affected documentation
+    - For each documentation change, identify all affected code
+    - Implement change propagation verification procedures
+    - Maintain a synchronization matrix for complex systems
+    - Document using this format:
+      ```
+      ### 🔄 SYNC VERIFICATION
+      - Code changes:
+        * [File 1]: [Changes]
+        * [File 2]: [Changes]
+      - Documentation affected:
+        * [Doc 1]: [Required updates]
+        * [Doc 2]: [Required updates]
+      - Synchronization verification:
+        * [Verification method]
+        * [Consistency check results]
+      ```
+      
 -->
 
 *Last updated: March 13, 2025 - Fixed inconsistency with autonomous environment listing*
