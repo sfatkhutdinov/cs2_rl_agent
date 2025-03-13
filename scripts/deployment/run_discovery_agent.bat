@@ -108,7 +108,7 @@ mkdir logs 2>nul
 mkdir logs\vision_debug 2>nul
 
 echo Attempting to focus game window with enhanced methods...
-python enhanced_focus.py "Cities: Skylines II"
+python ..\..\utils\enhanced_focus.py "Cities: Skylines II"
 if %ERRORLEVEL% NEQ 0 (
     echo WARNING: Failed to focus game window with enhanced methods.
     echo Falling back to simpler focus method...
@@ -126,10 +126,10 @@ REM Run the discovery agent training with appropriate mode
 echo Starting Discovery Agent Training with Enhanced Window Focus...
 if /i "%MODE%"=="explore" (
     echo Running in exploration-focused mode
-    python train_discovery.py --config %CONFIG_FILE% --timesteps %TIMESTEPS% --exploration-focus
+    python ..\..\training\train_discovery.py --config %CONFIG_FILE% --timesteps %TIMESTEPS% --exploration-focus
 ) else (
     echo Running in city-building goal-oriented mode
-    python train_discovery.py --config %CONFIG_FILE% --timesteps %TIMESTEPS% --goal-focus
+    python ..\..\training\train_discovery.py --config %CONFIG_FILE% --timesteps %TIMESTEPS% --goal-focus
 )
 
 echo Training complete. Press any key to exit...

@@ -1,11 +1,6 @@
----
-description: 
-globs: C:\Users\stani\source\repos\cs2_rl_agent\.cursor\rules\*.json
-alwaysApply: true
----
 # CS2 RL Agent Documentation - Cursor Project Rules
 
-*Last updated: 2024-03-13 - Initial creation of project-specific rules for Cursor IDE*
+*Last updated: 2024-03-13 - Updated Current Work section with completed documentation tasks*
 
 **Tags:** #meta #documentation #guidelines #process
 
@@ -98,4 +93,30 @@ alwaysApply: true
 - Initial setup of project documentation structure ✓
 - Creation of cursor_project_rules.md ✓
 - Integration of last updated notes in key documents ✓
-- Removal of separate maintenance log in favor of in-document version notes ✓ 
+- Removal of separate maintenance log in favor of in-document version notes ✓
+- Created training directory and initial training script analyses ✓
+- Updated document_tags.md with new tags for training documentation ✓
+
+*Upcoming documentation tasks:*
+1. Training Scripts Analysis
+   - Analyze train_adaptive.py and document the adaptive training approach ✓
+   - Analyze train_strategic.py and document the strategic agent training ✓
+   - Create a comparative overview of different training approaches ✓
+   - Analyze other training scripts (train_autonomous.py, train_discovery.py)
+
+2. Agent Implementations Analysis
+   - Document the adaptive_agent.py implementation in depth
+   - Document the strategic_agent.py implementation
+   - Analyze agent mode-switching mechanisms
+
+3. Environment and Configuration Analysis
+   - Document the environment implementations in src/environment/
+   - Analyze the configuration system and settings
+
+4. Batch Scripts Organization
+   - Categorize and document the various .bat scripts and their purposes
+   - Create a batch scripts reference document
+
+5. Testing Scripts Analysis
+   - Document the test scripts not yet covered in testing documentation
+   - Link test scripts to the existing testing documentation 

@@ -103,4 +103,5 @@ Further investigation should focus on:
 
 - [Adaptive Agent Training](adaptive_agent_training.md) - Detailed analysis of the adaptive training approach
 - [Strategic Agent Training](strategic_agent_training.md) - Detailed analysis of the strategic training approach
+- [Discovery-Based Training](discovery_training.md) - Detailed analysis of the discovery-based training approach
 - [Training Architecture](../architecture/training_architecture.md) - Overall architecture of the training system 

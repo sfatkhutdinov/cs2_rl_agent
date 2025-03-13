@@ -3,7 +3,7 @@ echo Activating virtual environment...
 call conda activate cs2_agent
 
 echo Testing CS2Environment...
-python test_cs2_env.py
+python ..\..\testing\test_cs2_env.py
 
 if %ERRORLEVEL% EQU 0 (
     echo Test passed successfully!

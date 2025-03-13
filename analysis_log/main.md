@@ -1,6 +1,6 @@
 # CS2 Reinforcement Learning Agent Analysis Log
 
-*Last updated: 2024-03-13 - Enhanced reference section and improved testing documentation structure*
+*Last updated: 2024-03-25 - Fixed inconsistency with autonomous environment listing*
 
 ## Overview
 This directory contains a comprehensive analysis of the CS2 reinforcement learning agent codebase, organized by component type. This main file serves as an index to navigate the detailed analyses in subdirectories.
@@ -21,6 +21,9 @@ For a complete overview of all findings and strategic recommendations, see:
 - [Component Integration](architecture/component_integration.md) - How components interact as a system
 - [Configuration System and Bridge Mod](architecture/configuration_system.md) - Configuration and game integration
 
+### Environment Analysis
+- [Autonomous Environment Implementation](environment/autonomous_environment.md) - Environment with autonomous capabilities
+
 ### Vision System Analysis
 - [Autonomous Vision Interface](components/autonomous_vision.md) - Computer vision-based game interaction
 - [Ollama Vision Interface](components/ollama_vision.md) - ML-based vision for game understanding
@@ -36,6 +39,7 @@ For a complete overview of all findings and strategic recommendations, see:
 ### Training Scripts Analysis
 - [Adaptive Agent Training](training/adaptive_agent_training.md) - Analysis of the adaptive training approach and implementation
 - [Strategic Agent Training](training/strategic_agent_training.md) - Analysis of the strategic agent training methodology
+- [Autonomous Training](training/autonomous_training.md) - Analysis of the autonomous training script implementation
 - [Training Scripts Overview](training/training_scripts_overview.md) - Comparison of different training approaches
 
 ### Testing and Deployment
@@ -73,12 +77,17 @@ The following analyses have been completed and can be accessed:
 - [Reward Calculation](components/reward_calculation.md) ✓
 - [Testing Infrastructure](testing/testing_infrastructure.md) ✓
 - [Deployment Processes](testing/deployment_processes.md) ✓
+- [Adaptive Agent Training](training/adaptive_agent_training.md) ✓
+- [Strategic Agent Training](training/strategic_agent_training.md) ✓
+- [Discovery-Based Training](training/discovery_training.md) ✓
+- [Discovery Agent Implementation](components/discovery_agent.md) ✓
+- [Discovery Environment Implementation](training/discovery_environment.md) ✓
+- [Vision-Guided Environment Implementation](training/vision_guided_environment.md) ✓
+- [Autonomous Environment Implementation](environment/autonomous_environment.md) ✓
+- [Autonomous Training](training/autonomous_training.md) ✓
 
 ## Analyses in Progress
 The following analyses are currently in progress:
-- [Adaptive Agent Training](training/adaptive_agent_training.md)
-- [Strategic Agent Training](training/strategic_agent_training.md)
-- [Training Scripts Overview](training/training_scripts_overview.md)
 
 ## Chronological Log History
 The original chronological log entries can be found in [original_codebase_analysis_log.md](original_codebase_analysis_log.md).

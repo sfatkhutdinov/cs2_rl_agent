@@ -1,6 +1,11 @@
+---
+description: .cursor\rules\*.json
+globs: \.cursor\rules\*.json
+alwaysApply: true
+---
 # CS2 RL Agent Documentation - Cursor Project Rules
 
-*Last updated: 2024-03-19 - Created detailed analysis of train_discovery.py and updated project status*
+*Last updated: 2024-03-13 - Updated Current Work section with more accurate assessment of completed analyses*
 
 **Tags:** #meta #documentation #guidelines #process
 
@@ -27,7 +32,7 @@
    - Analyze train_adaptive.py and document the adaptive training approach ✓
    - Analyze train_strategic.py and document the strategic agent training ✓
    - Create a comparative overview of different training approaches ✓
-   - Create detailed analysis of train_discovery.py (building on existing overview) ✓
+   - Create detailed analysis of train_discovery.py (building on existing overview)
    - Create detailed analysis of train_autonomous.py (building on existing overview)
 
 2. Agent Implementations Analysis

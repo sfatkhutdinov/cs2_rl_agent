@@ -1,118 +1,110 @@
-# Cities: Skylines 2 Reinforcement Learning Agent
+# CS2 Reinforcement Learning Agent
 
-This repository contains code for training a reinforcement learning agent to play Cities: Skylines 2 using a discovery-based approach with the Granite 3.2 Vision model for game understanding.
+A reinforcement learning agent for Counter-Strike 2 that uses multiple training modes and computer vision to learn and play the game.
 
-## Prerequisites
+## Directory Structure
 
-- Windows 10/11
-- Cities: Skylines 2 installed
-- Anaconda or Miniconda
-- [Ollama](https://ollama.ai/) installed and running
-
-## Quick Start
-
-For the fastest way to get started, run the all-in-one setup and training batch file:
-
-```bash
-all_in_one_setup_and_train.bat
+```
+cs2_rl_agent/
+│
+├── scripts/                  # Executable scripts
+│   ├── training/             # Training script batch files
+│   ├── testing/              # Testing script batch files  
+│   ├── utils/                # Utility script batch files
+│   └── deployment/           # Deployment script batch files
+│
+├── training/                 # Training Python scripts
+│   ├── train_adaptive.py     # Adaptive agent training
+│   ├── train_strategic.py    # Strategic agent training
+│   ├── train_discovery.py    # Discovery mode training
+│   └── ...
+│
+├── testing/                  # Testing Python scripts
+│   ├── test_cs2_env.py       # CS2 environment tests
+│   ├── test_config.py        # Configuration tests
+│   └── ...
+│
+├── utils/                    # Utility Python scripts
+│   ├── setup_gpu.py          # GPU setup utilities
+│   ├── check_gpu.py          # GPU checking utilities
+│   └── ...
+│
+├── config/                   # Configuration files
+│   ├── adaptive_config.yaml  # Adaptive agent configuration
+│   ├── strategic_config.yaml # Strategic agent configuration
+│   └── ...
+│
+├── docs/                     # Documentation
+│   ├── ANACONDA_SETUP.md     # Anaconda setup guide
+│   ├── WINDOWS_SETUP.md      # Windows setup guide
+│   └── ...
+│
+├── src/                      # Core source code
+│   ├── agent/                # Agent implementations
+│   ├── actions/              # Action system
+│   ├── environment/          # Environment implementations
+│   ├── utils/                # Core utilities
+│   └── interface/            # Interface components
+│
+├── analysis_log/             # Analysis documentation
+│
+├── images/                   # Image files
+│
+├── models/                   # Trained models
+│
+├── data/                     # Training data
+│
+├── logs/                     # Log files
+│
+└── tensorboard/              # TensorBoard logs
 ```
 
-This script will:
-1. Check for Anaconda and set up the environment
-2. Install all required packages
-3. Configure GPU support if available
-4. Set up Ollama and the vision model
-5. Run all necessary tests
-6. Start the training process
+## Setup
 
-You can customize the training with command-line parameters:
-```bash
-all_in_one_setup_and_train.bat [timesteps] [mode] [focus]
-```
+1. Install Anaconda or Miniconda
+2. Run the setup script: `scripts/utils/setup_conda.bat`
+3. Install dependencies: `pip install -r requirements.txt`
+4. Configure GPU (optional): `scripts/utils/enable_gpu.bat`
 
-For more information about options:
-```bash
-all_in_one_setup_and_train.bat help
-```
+## Training
 
-## Manual Setup
+To train the agent, use one of the following scripts:
 
-If you prefer to set up manually:
+- **Adaptive Agent**: `scripts/training/train_adaptive.bat`
+- **Strategic Agent**: `scripts/training/train_strategic.bat`
+- **Discovery Mode**: `scripts/training/train_discovery.bat`
+- **Vision-Guided**: `scripts/training/train_vision_guided.bat`
+- **Tutorial-Guided**: `scripts/training/train_tutorial_guided.bat`
+- **Autonomous**: `scripts/training/train_autonomous.bat`
 
-1. Clone this repository
-2. Create and activate the Anaconda environment:
-   ```bash
-   setup_conda.bat
-   ```
-   This will create a conda environment named 'cs2_agent' with all required packages.
+## Testing
 
-3. If needed, activate the environment manually:
-   ```bash
-   conda activate cs2_agent
-   ```
+To test the agent, use one of the following scripts:
 
-4. Run the Ollama setup script to ensure the vision model is installed:
-   ```bash
-   setup_ollama.bat
-   ```
+- **CS2 Environment**: `scripts/testing/test_cs2_env.bat`
+- **Configuration**: `scripts/testing/test_config.bat`
+- **Discovery Environment**: `scripts/testing/test_discovery_env.bat`
+- **Adaptive Modes**: `scripts/testing/test_adaptive_modes.bat`
 
-For more details on the Anaconda setup, see [ANACONDA_SETUP.md](ANACONDA_SETUP.md).
+## Deployment
 
-## Usage
+For deployment, use one of the following scripts:
 
-### Discovery-Based Training
+- **All-in-One Setup and Train**: `scripts/deployment/all_in_one_setup_and_train.bat`
+- **Run Discovery Agent**: `scripts/deployment/run_discovery_agent.bat`
+- **Run All Simple**: `scripts/deployment/run_all_simple.bat`
 
-This mode uses the Granite 3.2 Vision model to autonomously discover and interact with the game's UI elements.
+## Documentation
 
-1. Start Cities: Skylines 2 and make sure it's visible on your screen
-2. Run the discovery training script:
-   ```bash
-   train_discovery_with_focus.bat
-   ```
+For detailed documentation, see the following:
 
-The script will:
-- Focus on the game window
-- Detect UI elements using the vision model
-- Attempt to learn game mechanics through exploration
-- Save models to the `models` directory
+- [Anaconda Setup Guide](docs/ANACONDA_SETUP.md)
+- [Windows Setup Guide](docs/WINDOWS_SETUP.md)
+- [All-in-One Guide](docs/ALL_IN_ONE_GUIDE.md)
+- [Autonomous Agent Guide](docs/AUTONOMOUS_AGENT.md)
+- [Auto Detection Guide](docs/AUTO_DETECTION.md)
 
-### Configuration
-
-The agent's behavior is controlled by configuration files in the `config` directory:
-
-- `discovery_config.yaml`: Settings for discovery-based training
-- `tutorial_guided_config.yaml`: Settings for tutorial-guided training
-
-## Troubleshooting
-
-### Common Issues
-
-- **Window Focus Problems**: If the agent doesn't seem to be interacting with the game, make sure the game window is visible and not minimized.
-
-- **Ollama Connection**: If you see connection errors, ensure Ollama is running by opening a terminal and typing:
-  ```bash
-  ollama serve
-  ```
-
-- **Vision Model Issues**: If the vision model isn't working correctly, try reinstalling it manually:
-  ```bash
-  ollama pull granite3.2-vision:latest
-  ```
-
-- **GPU Not Detected**: If your GPU isn't being detected, run:
-  ```bash
-  check_gpu.bat
-  ```
-
-## Project Structure
-
-- `src/`: Source code
-  - `environment/`: Game environment classes
-  - `agent/`: RL agent implementations
-  - `utils/`: Utility functions
-- `config/`: Configuration files
-- `models/`: Saved model checkpoints
-- `logs/`: Training logs
+For code analysis and architecture documentation, see the [analysis_log](analysis_log/main.md) directory.
 
 ## License
 

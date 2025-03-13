@@ -163,6 +163,14 @@
   },
   "active": "5c2df5fa8fa857d8",
   "lastOpenFiles": [
+    "link_check_results.csv",
+    "training/autonomous_training.md",
+    "environment/autonomous_environment.md",
+    "environment",
+    "training/vision_guided_environment.md",
+    "training/discovery_environment.md",
+    "components/discovery_agent.md",
+    "training/discovery_training.md",
     "training/training_scripts_overview.md",
     "training/strategic_agent_training.md",
     "training/adaptive_agent_training.md",
@@ -186,13 +194,6 @@
     "testing/08_coverage_analysis.md",
     "testing/07_test_automation.md",
     "testing/06_performance_testing.md",
-    "testing/05_simulation_environment.md",
-    "testing/04_integration_testing.md",
-    "testing/03_unit_testing.md",
-    "testing/02_testing_architecture.md",
-    "testing/01_testing_intro.md",
-    "architecture/action_system.md",
-    "Untitled.canvas",
-    "testing/testing_infrastructure.md"
+    "Untitled.canvas"
   ]
 }

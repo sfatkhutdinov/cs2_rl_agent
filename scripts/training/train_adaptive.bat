@@ -34,7 +34,7 @@ echo The training will begin in 5 seconds.
 timeout /t 5
 
 REM Run the adaptive training script
-python train_adaptive.py --timesteps %TIMESTEPS% %FOCUS% --starting-mode %STARTING_MODE% %EXTRA_ARGS%
+python ..\..\training\train_adaptive.py --timesteps %TIMESTEPS% %FOCUS% --starting-mode %STARTING_MODE% %EXTRA_ARGS%
 
 echo.
 echo Training complete!
