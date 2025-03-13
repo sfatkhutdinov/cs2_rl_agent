@@ -1,5 +1,7 @@
 # Coverage Analysis
 
+**Tags:** #testing #coverage #analysis
+
 The CS2 reinforcement learning agent's testing infrastructure implements various levels of test coverage, with significant variation across different components of the codebase.
 
 ## Coverage Measurement Approach

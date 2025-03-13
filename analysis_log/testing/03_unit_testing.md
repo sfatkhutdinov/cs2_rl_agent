@@ -1,5 +1,7 @@
 # Unit Testing Framework
 
+**Tags:** #testing #unit #analysis
+
 The CS2 agent's unit testing approach is pragmatic and focused on operational validation rather than comprehensive test coverage. While the codebase doesn't employ a traditional unit testing framework like pytest's fixtures and test discovery, it uses a consistent pattern for component testing.
 
 ## Test Script Pattern

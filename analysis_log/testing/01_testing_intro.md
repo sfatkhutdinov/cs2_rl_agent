@@ -1,5 +1,7 @@
 # Introduction to Testing Infrastructure
 
+**Tags:** #testing #methodology #analysis
+
 This document provides an overview of the testing infrastructure for the CS2 reinforcement learning agent. The testing approach is designed to validate the functionality, performance, and reliability of the agent across various components and scenarios.
 
 ## Testing Methodology

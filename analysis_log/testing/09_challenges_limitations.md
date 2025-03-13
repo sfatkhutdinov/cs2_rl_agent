@@ -1,5 +1,7 @@
 # Challenges and Limitations
 
+**Tags:** #testing #challenges #limitations #analysis
+
 The CS2 reinforcement learning agent's testing infrastructure faces several significant challenges and limitations that impact its effectiveness and comprehensiveness.
 
 ## External Dependencies

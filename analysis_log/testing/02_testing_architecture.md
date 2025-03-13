@@ -1,5 +1,7 @@
 # Testing Architecture Overview
 
+**Tags:** #testing #architecture #integration #analysis
+
 The CS2 reinforcement learning agent employs a multi-layered testing approach that focuses on component validation, integration verification, and system-level testing. The testing architecture is primarily organized through standalone test scripts rather than using a centralized testing framework, with an emphasis on practical validation of critical functionality.
 
 ## Testing Structure

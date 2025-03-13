@@ -1,4 +1,6 @@
-# Testing Infrastructure Analysis - Executive Summary
+# Testing Infrastructure: Executive Summary
+
+**Tags:** #testing #summary #analysis
 
 ## Overview
 

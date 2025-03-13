@@ -1,5 +1,7 @@
 # Integration Testing
 
+**Tags:** #testing #integration #analysis
+
 The CS2 reinforcement learning agent implements several integration testing approaches to validate the interactions between different components of the system. These tests focus on ensuring that the various subsystems work together correctly, particularly at critical integration points.
 
 ## Integration Test Categories

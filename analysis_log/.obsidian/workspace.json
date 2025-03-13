@@ -163,6 +163,7 @@
   },
   "active": "5c2df5fa8fa857d8",
   "lastOpenFiles": [
+    "maintenance_log.md",
     "tools/link_checker_docs.md",
     "tools/link_checker.ps1",
     "tools",
@@ -191,7 +192,6 @@
     "testing/testing_infrastructure.md",
     "testing/testing_sections.md",
     "components/reward_calculation.md",
-    "performance/parallel_processing.md",
-    "parallel_processing.md"
+    "performance/parallel_processing.md"
   ]
 }

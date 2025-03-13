@@ -1,5 +1,7 @@
 # Recommendations for Improvement
 
+**Tags:** #testing #recommendations #enhancement #analysis
+
 This document outlines recommended improvements to the CS2 reinforcement learning agent's testing infrastructure based on the analysis of current limitations and industry best practices.
 
 ## Automated Testing Pipeline

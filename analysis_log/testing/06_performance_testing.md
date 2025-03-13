@@ -1,5 +1,7 @@
 # Performance Testing
 
+**Tags:** #testing #performance #benchmarking #analysis
+
 Performance testing is a critical aspect of the CS2 reinforcement learning agent's testing infrastructure, focusing on measuring and optimizing the agent's speed, resource utilization, and scalability. The codebase implements several performance testing approaches to identify bottlenecks and ensure the agent can operate efficiently in real-time game scenarios.
 
 ## Performance Metrics Tracking

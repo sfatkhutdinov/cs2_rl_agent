@@ -1,5 +1,7 @@
 # Document Tagging System
 
+*Last updated: 2024-03-13 - Established tagging system to improve document discoverability*
+
 ## Overview
 This document defines the tagging system used throughout the CS2 reinforcement learning agent analysis logs. Tags enable flexible filtering and discovery of related documents across different categories.
 

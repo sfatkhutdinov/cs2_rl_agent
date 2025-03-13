@@ -1,5 +1,7 @@
 # Simulation Environment
 
+**Tags:** #testing #simulation #environment #analysis
+
 The CS2 reinforcement learning agent utilizes a simulation environment to enable development, testing, and validation without requiring the actual game to be running. This simulation environment plays a critical role in the testing infrastructure by providing a controlled, reproducible environment for testing agent behavior.
 
 ## Fallback Mode Architecture

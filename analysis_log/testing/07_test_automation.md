@@ -1,5 +1,7 @@
 # Test Automation and CI/CD
 
+**Tags:** #testing #automation #CI/CD #analysis
+
 The CS2 reinforcement learning agent employs a partially automated testing approach centered around batch files rather than a formal CI/CD pipeline. This pragmatic approach emphasizes operational validation and developer-driven testing rather than fully automated continuous integration.
 
 ## Batch File Automation

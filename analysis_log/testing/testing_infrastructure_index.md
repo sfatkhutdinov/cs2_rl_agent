@@ -1,4 +1,6 @@
-# Testing Infrastructure Analysis
+# Testing Infrastructure Analysis Index
+
+**Tags:** #testing #index #summary
 
 This document has been broken down into separate section files for better organization and readability.
 

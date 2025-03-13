@@ -1,5 +1,7 @@
 # Model Evaluation Methods and Success Criteria Analysis
 
+**Tags:** #testing #evaluation #model #metrics #analysis
+
 ## Context
 This document examines how the CS2 reinforcement learning agent is evaluated beyond standard training metrics, focusing on the methodologies, success criteria, and visualization techniques used to assess agent performance in practice.
 
