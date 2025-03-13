@@ -163,6 +163,7 @@ The testing automation faces several challenges:
 ## Related Sections
 - [Introduction](01_testing_intro.md)
 - [Testing Architecture Overview](02_testing_architecture.md)
+- [Unit Testing Framework](03_unit_testing.md)
 - [Integration Testing](04_integration_testing.md)
 - [Performance Testing](06_performance_testing.md)
-- [Coverage Analysis](08_coverage_analysis.md) 
+- [Coverage Analysis](08_coverage_analysis.md)

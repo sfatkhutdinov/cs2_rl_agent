@@ -2,6 +2,12 @@
 
 This document has been broken down into separate section files for better organization and readability.
 
+## [Executive Summary](testing_infrastructure_summary.md)
+
+A high-level overview of key findings, strengths, challenges, and recommendations from the testing infrastructure analysis.
+
+## Detailed Sections
+
 Please refer to the following section files:
 
 1. [Introduction](01_testing_intro.md) - Context and methodology

@@ -163,4 +163,4 @@ This performance overhead leads to:
 - [Introduction](01_testing_intro.md)
 - [Testing Architecture Overview](02_testing_architecture.md)
 - [Coverage Analysis](08_coverage_analysis.md)
-- [Recommendations for Improvement](10_improvement_recommendations.md) 
+- [Recommendations for Improvement](10_improvement_recommendations.md)

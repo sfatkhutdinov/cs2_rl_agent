@@ -6,6 +6,8 @@ This directory contains a comprehensive analysis of the CS2 reinforcement learni
 ## Key Findings and Recommendations
 For a complete overview of all findings and strategic recommendations, see:
 - [Comprehensive Synthesis: Key Findings and Strategic Insights](architecture/comprehensive_synthesis.md)
+- [Analysis Summary: High-level Overview of All Completed Analyses](analysis_summary.md)
+- [Development Roadmap: Strategic Plan for Future Enhancements](development_roadmap.md)
 
 ## Directory Structure
 
@@ -37,6 +39,12 @@ For a complete overview of all findings and strategic recommendations, see:
 ### Game State Understanding
 - [Reward Calculation](components/reward_calculation.md) - How game state is processed and rewards are calculated
 
+## Reference Materials and Tools
+- [Glossary of Key Terms](glossary.md) - Definitions of specialized terminology used throughout the analysis
+- [Document Tagging System](document_tags.md) - Tag-based categorization for flexible filtering and discovery
+- [Component Relationship Visualization](visualization/component_relationships.md) - Visual maps of system components and their relationships
+- [Link Checker](tools/link_checker_docs.md) - Tool for validating document links and maintaining navigation integrity
+
 ## Completed Analyses
 The following analyses have been completed and can be accessed:
 - [Comprehensive Synthesis](architecture/comprehensive_synthesis.md) ✓
@@ -55,6 +63,7 @@ The following analyses have been completed and can be accessed:
 - [Parallel Processing Pipeline](performance/parallel_processing.md) ✓
 - [Reward Calculation](components/reward_calculation.md) ✓
 - [Testing Infrastructure](testing/testing_infrastructure.md) ✓
+- [Deployment Processes](testing/deployment_processes.md) ✓
 
 ## Chronological Log History
 The original chronological log entries can be found in [original_codebase_analysis_log.md](original_codebase_analysis_log.md).
@@ -68,6 +77,8 @@ Analysis was performed by systematically examining each component of the codebas
 4. **Relationship to Other Components** - How it integrates with the rest of the system
 5. **Optimization Opportunities** - Potential improvements
 6. **Next Steps** - Recommendations for further investigation
+
+For details on the reorganization of the analysis from the original chronological format to this document-based structure, see the [Reorganization Verification Report](reorganization_verification.md).
 
 ## Navigation
 Each file contains backlinks to related analyses, allowing for non-linear exploration of the codebase understanding. 

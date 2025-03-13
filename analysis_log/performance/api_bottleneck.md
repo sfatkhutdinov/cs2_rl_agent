@@ -1,5 +1,7 @@
 # API Communication Bottleneck Analysis
 
+**Tags:** #performance #api #bottleneck #optimization #vision #analysis
+
 ## Context
 This analysis examines the API communication bottlenecks in the CS2 reinforcement learning agent, with a particular focus on the vision API interactions. The system relies heavily on external vision APIs (particularly in the Ollama Vision Interface) for processing game screenshots and extracting semantic information. These API calls represent a significant performance bottleneck, impacting training speed, inference latency, and overall system responsiveness. Understanding and addressing these bottlenecks is crucial for optimizing agent performance and scalability.
 

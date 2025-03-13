@@ -163,6 +163,18 @@
   },
   "active": "5c2df5fa8fa857d8",
   "lastOpenFiles": [
+    "tools/link_checker_docs.md",
+    "tools/link_checker.ps1",
+    "tools",
+    "glossary.md",
+    "visualization/component_relationships.md",
+    "visualization",
+    "document_tags.md",
+    "reorganization_verification.md",
+    "development_roadmap.md",
+    "analysis_summary.md",
+    "testing/deployment_processes.md",
+    "testing/testing_infrastructure_new.md",
     "testing/testing_infrastructure_index.md",
     "testing/10_improvement_recommendations.md",
     "testing/09_challenges_limitations.md",
@@ -180,10 +192,6 @@
     "testing/testing_sections.md",
     "components/reward_calculation.md",
     "performance/parallel_processing.md",
-    "parallel_processing.md",
-    "original_codebase_analysis_log.md",
-    "performance/api_bottleneck.md",
-    "components/autonomous_vision.md",
-    "main.md"
+    "parallel_processing.md"
   ]
 }

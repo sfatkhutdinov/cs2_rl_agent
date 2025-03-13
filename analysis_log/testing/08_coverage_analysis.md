@@ -170,5 +170,6 @@ This strategy focuses on:
 - [Introduction](01_testing_intro.md)
 - [Testing Architecture Overview](02_testing_architecture.md)
 - [Unit Testing Framework](03_unit_testing.md)
+- [Integration Testing](04_integration_testing.md)
 - [Test Automation and CI/CD](07_test_automation.md)
-- [Challenges and Limitations](09_challenges_limitations.md) 
+- [Challenges and Limitations](09_challenges_limitations.md)
