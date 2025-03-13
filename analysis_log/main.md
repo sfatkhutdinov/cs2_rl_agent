@@ -319,6 +319,32 @@ META PROMPT FOR DOCUMENTATION WORK:
         * [Verification method]
         * [Consistency check results]
       ```
+
+26. IMPLEMENT GIT-BASED CHANGE TRACKING:
+    - Use git commands for robust version control of all changes
+    - For each significant change or logical group of changes:
+      * Create atomic commits with descriptive messages
+      * Reference related issues/tickets in commit messages
+      * Use consistent commit message format
+    - Periodically check git history to understand evolution
+    - Use git diff to verify changes before finalizing
+    - Document git operations in this format:
+      ```
+      ### 📦 GIT OPERATIONS
+      - Staged changes:
+        * [File 1]: [Description of changes]
+        * [File 2]: [Description of changes]
+      - Commit message: [Formatted commit message]
+      - Branch strategy: [Current branch / Branch creation if needed]
+      - Pre-commit verification: [Results of git diff review]
+      ```
+    - Common git commands to use:
+      * `git status` - Check which files have changes
+      * `git diff [file]` - Review specific changes in detail
+      * `git add [file]` - Stage specific files for commit
+      * `git commit -m "message"` - Commit with descriptive message
+      * `git log --oneline -n 5` - Review recent commit history
+      * `git checkout -b [branch-name]` - Create new branch if needed
       
 -->
 
