@@ -1,0 +1,5 @@
+{
+  "description": "Rules for analyzing and modifying training scripts",
+  "patterns": ["train_*.py", "src/agent/*.py"],
+  "rule": "When working with training scripts or agent implementations:\n\n1. Understand the mode-based architecture: The system has different training modes (Discovery, Tutorial, Vision, Autonomous, Strategic)\n\n2. Adaptive agent is the meta-controller that can switch between modes\n\n3. Strategic agent is the most advanced mode focused on high-level decision making\n\n4. All training scripts follow a similar pattern:\n   - Load configuration\n   - Set up environment\n   - Initialize agent\n   - Execute training loop with callbacks\n   - Save model and metrics\n\n5. When modifying training scripts, maintain compatibility with corresponding batch files\n\n6. Document any significant changes in the analysis_log/training/ directory\n\n7. Follow the established naming conventions and code organization patterns\n\n8. Ensure proper error handling and logging"
+} 

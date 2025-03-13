@@ -163,6 +163,10 @@
   },
   "active": "5c2df5fa8fa857d8",
   "lastOpenFiles": [
+    "training/training_scripts_overview.md",
+    "training/strategic_agent_training.md",
+    "training/adaptive_agent_training.md",
+    "training",
     "maintenance_log.md",
     "tools/link_checker_docs.md",
     "tools/link_checker.ps1",
@@ -189,9 +193,6 @@
     "testing/01_testing_intro.md",
     "architecture/action_system.md",
     "Untitled.canvas",
-    "testing/testing_infrastructure.md",
-    "testing/testing_sections.md",
-    "components/reward_calculation.md",
-    "performance/parallel_processing.md"
+    "testing/testing_infrastructure.md"
   ]
 }

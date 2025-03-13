@@ -33,6 +33,11 @@ For a complete overview of all findings and strategic recommendations, see:
 ### Resilience and Error Handling
 - [Error Recovery Mechanisms](resilience/error_recovery.md) - How the system handles failures
 
+### Training Scripts Analysis
+- [Adaptive Agent Training](training/adaptive_agent_training.md) - Analysis of the adaptive training approach and implementation
+- [Strategic Agent Training](training/strategic_agent_training.md) - Analysis of the strategic agent training methodology
+- [Training Scripts Overview](training/training_scripts_overview.md) - Comparison of different training approaches
+
 ### Testing and Deployment
 - [Testing Infrastructure](testing/testing_infrastructure.md) - Comprehensive testing documentation
 - [Testing Infrastructure Summary](testing/testing_infrastructure_summary.md) - Executive summary of testing approach
@@ -68,6 +73,12 @@ The following analyses have been completed and can be accessed:
 - [Reward Calculation](components/reward_calculation.md) ✓
 - [Testing Infrastructure](testing/testing_infrastructure.md) ✓
 - [Deployment Processes](testing/deployment_processes.md) ✓
+
+## Analyses in Progress
+The following analyses are currently in progress:
+- [Adaptive Agent Training](training/adaptive_agent_training.md)
+- [Strategic Agent Training](training/strategic_agent_training.md)
+- [Training Scripts Overview](training/training_scripts_overview.md)
 
 ## Chronological Log History
 The original chronological log entries can be found in [original_codebase_analysis_log.md](original_codebase_analysis_log.md).

@@ -1,0 +1,5 @@
+{
+  "description": "Documentation standards for CS2 RL agent analysis logs",
+  "patterns": ["analysis_log/**/*.md"],
+  "rule": "When working with documentation files in the analysis_log directory, follow these practices:\n\n1. Include a 'Last updated' note after the title: *Last updated: YYYY-MM-DD - Brief description of changes*\n\n2. Add appropriate tags immediately after the 'Last updated' note using format: **Tags:** #tag1 #tag2 #tag3\n   Only use tags defined in document_tags.md\n\n3. Follow the standard document structure:\n   - Context/Introduction\n   - Methodology\n   - Findings\n   - Relationship to Other Components\n   - Optimization Opportunities\n   - Next Steps/Recommendations\n\n4. Provide backlinks to related documents\n\n5. Use H1 (#) for document titles only, H2 (##) for major sections, H3 (###) for subsections\n\n6. When creating new documents, immediately add references in the appropriate index files\n\n7. Never create separate growing logs that would consume context window space\n\n8. Prefer in-place documentation updates with version notes"
+} 

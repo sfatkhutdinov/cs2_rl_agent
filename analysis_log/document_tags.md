@@ -1,6 +1,6 @@
 # Document Tagging System
 
-*Last updated: 2024-03-13 - Established tagging system to improve document discoverability*
+*Last updated: 2024-03-13 - Added #training and #adaptive tags*
 
 ## Overview
 This document defines the tagging system used throughout the CS2 reinforcement learning agent analysis logs. Tags enable flexible filtering and discovery of related documents across different categories.
@@ -24,6 +24,7 @@ Tags are included at the top of each document in a standardized format:
 - `#action` - Action execution and game interaction
 - `#reward` - Reward calculation and optimization
 - `#config` - Configuration and environment setup
+- `#training` - Training scripts and methodologies
 
 ### Technical Focus Tags
 - `#architecture` - System design and component relationships
@@ -44,6 +45,13 @@ Tags are included at the top of each document in a standardized format:
 - `#summary` - Summary or overview document
 - `#roadmap` - Planning and future direction
 - `#verification` - Verification and validation
+- `#comparison` - Comparative analysis of multiple components
+- `#meta` - Documents about the documentation itself
+
+### Agent Type Tags
+- `#adaptive` - Adaptive agent-specific content
+- `#strategic` - Strategic agent-specific content
+- `#autonomous` - Autonomous agent-specific content
 
 ## Tag Search
 To find documents with specific tags:

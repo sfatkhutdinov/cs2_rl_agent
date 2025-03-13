@@ -1,0 +1,5 @@
+{
+  "description": "Rules for working with environment implementations",
+  "patterns": ["src/environment/*.py"],
+  "rule": "When working with environment implementations:\n\n1. Each environment corresponds to a specific training mode (DiscoveryEnvironment, TutorialEnvironment, etc.)\n\n2. Environments follow the OpenAI Gym/Gymnasium interface with step(), reset(), render() methods\n\n3. The observation space and action space are defined in the constructor\n\n4. Reward functions are specific to each environment type\n\n5. Environments may include wrappers for flattening observations, normalization, etc.\n\n6. Strategic environments use higher-level abstractions and more complex state representations\n\n7. When modifying environments, ensure compatibility with corresponding training scripts\n\n8. Document any significant changes in the analysis_log/training/ directory"
+} 

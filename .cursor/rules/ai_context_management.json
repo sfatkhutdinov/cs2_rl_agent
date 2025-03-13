@@ -1,0 +1,5 @@
+{
+  "description": "Guidelines for AI context management in the CS2 RL agent project",
+  "patterns": ["**/*"],
+  "rule": "When working on the CS2 RL agent project, follow these context management practices:\n\n1. At the beginning of each session, review main.md and cursor_project_rules.md to refresh context\n\n2. When implementing changes, immediately update relevant documents with version notes\n\n3. When creating new documents, immediately add references in the appropriate index files\n\n4. For each major documentation update, ensure there's a record in the relevant document's version history\n\n5. Prioritize documentation updates based on user instructions\n\n6. When a documentation change is requested, understand if it affects:\n   - The overall documentation structure (highest priority)\n   - Key index documents (high priority)\n   - Individual analysis documents (normal priority)\n\n7. Never create growing logs that would consume context window space\n\n8. Prefer in-place documentation updates with version notes over separate logs\n\n9. Reference @file: cursor_project_rules.md to understand documentation guidelines"
+} 

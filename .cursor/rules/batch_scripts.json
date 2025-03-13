@@ -1,0 +1,5 @@
+{
+  "description": "Rules for working with batch scripts for training and testing",
+  "patterns": ["*.bat"],
+  "rule": "When working with batch scripts:\n\n1. Batch scripts are used to configure and launch training and testing scripts\n\n2. Each script sets up the appropriate environment variables and dependencies\n\n3. Scripts are organized by purpose: training, testing, environment setup, etc.\n\n4. Many scripts have corresponding Python files (e.g., train_adaptive.bat -> train_adaptive.py)\n\n5. When modifying batch scripts:\n   - Maintain the same command-line parameter format\n   - Update comments to reflect changes\n   - Ensure compatibility with corresponding Python scripts\n   - Test that the script works in Windows environments\n\n6. Document the purpose and usage of batch scripts in code comments\n\n7. For significant changes, update the corresponding documentation in analysis_log/\n\n8. Maintain consistent formatting and naming conventions"
+} 
