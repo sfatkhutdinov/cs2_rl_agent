@@ -119,9 +119,8 @@ class VisionInterface(BaseInterface):
     
     def disconnect(self) -> None:
         """Disconnect from the game."""
-        self.sct.close()
-        self.connected = False
-        self.logger.info("Disconnected from the game.")
+        # Nothing to do for vision interface
+        pass
     
     def get_game_state(self) -> Dict[str, Any]:
         """
@@ -162,12 +161,34 @@ class VisionInterface(BaseInterface):
             screenshot = self.sct.grab(self.monitor)
             self.last_screenshot = np.array(screenshot)
             
-            # Resize to the specified dimensions in the config
-            image_size = self.config["environment"]["observation_space"]["image_size"]
+            # Default image size if not specified in config
+            image_size = (84, 84)
+            
+            # Try to get image size from config
+            try:
+                if "environment" in self.config and "observation_space" in self.config["environment"]:
+                    if "image_size" in self.config["environment"]["observation_space"]:
+                        image_size = self.config["environment"]["observation_space"]["image_size"]
+                    elif "screenshot" in self.config["environment"]["observation_space"]:
+                        # Try to get from screenshot shape
+                        shape = self.config["environment"]["observation_space"]["screenshot"]["shape"]
+                        if len(shape) >= 2:
+                            image_size = (shape[0], shape[1])
+            except Exception as e:
+                self.logger.warning(f"Could not get image size from config: {str(e)}. Using default (84, 84).")
+            
+            # Resize to the specified dimensions
             resized_image = cv2.resize(self.last_screenshot, (image_size[1], image_size[0]))
             
             # Convert to grayscale if specified
-            if self.config["environment"]["observation_space"]["grayscale"]:
+            grayscale = False
+            try:
+                if "environment" in self.config and "observation_space" in self.config["environment"]:
+                    grayscale = self.config["environment"]["observation_space"].get("grayscale", False)
+            except Exception:
+                pass
+                
+            if grayscale:
                 resized_image = cv2.cvtColor(resized_image, cv2.COLOR_BGR2GRAY)
                 resized_image = np.expand_dims(resized_image, axis=2)
             
@@ -208,10 +229,18 @@ class VisionInterface(BaseInterface):
                         # Remove non-numeric characters
                         text = ''.join(c for c in text if c.isdigit() or c == '.')
                         value = float(text) if text else 0.0
-                        metrics[metric_name] = value
+                        
+                        # Use budget_balance instead of budget for consistency
+                        if metric_name == "budget":
+                            metrics["budget_balance"] = value
+                        else:
+                            metrics[metric_name] = value
                     except ValueError:
                         self.logger.warning(f"Failed to parse value for {metric_name}: '{text}'")
-                        metrics[metric_name] = 0.0
+                        if metric_name == "budget":
+                            metrics["budget_balance"] = 0.0
+                        else:
+                            metrics[metric_name] = 0.0
             
             # Store the metrics for later comparison
             self.last_metrics = metrics
@@ -352,7 +381,7 @@ class VisionInterface(BaseInterface):
         # Check for bankruptcy - this is a simple implementation that assumes
         # bankruptcy is indicated by a negative budget value
         metrics = self.get_metrics()
-        if metrics.get("budget", 0) < 0:
+        if metrics.get("budget_balance", 0) < 0:
             return True
         
         # TODO: Add more sophisticated game over detection
@@ -393,4 +422,28 @@ class VisionInterface(BaseInterface):
             
         except Exception as e:
             self.logger.error(f"Failed to reset game: {str(e)}")
-            return False 
+            return False
+    
+    def reset(self) -> np.ndarray:
+        """
+        Reset the interface state.
+        
+        This method is called when the environment is reset.
+        
+        Returns:
+            Visual observation after reset
+        """
+        self.logger.info("Resetting vision interface")
+        
+        # Clear cached data
+        self.last_metrics = {}
+        self.last_screenshot = None
+        
+        # Try to reset the game if needed
+        try:
+            # Take a fresh screenshot to update the interface state
+            return self.get_visual_observation()
+        except Exception as e:
+            self.logger.warning(f"Error during interface reset: {str(e)}")
+            # Return a default observation on error
+            return np.zeros((84, 84, 3), dtype=np.uint8) 

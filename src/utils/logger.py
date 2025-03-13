@@ -4,8 +4,9 @@ import time
 from typing import Dict, Any, Optional
 import json
 from datetime import datetime
-import tensorboard
-from tensorboard.plugins.hparams import api as hp
+# Remove TensorFlow/TensorBoard imports
+# import tensorboard
+# from tensorboard.plugins.hparams import api as hp
 import numpy as np
 from matplotlib import pyplot as plt
 import pandas as pd
@@ -35,6 +36,7 @@ class Logger:
             config["paths"]["logs"]
         ))
         self.experiment_dir = os.path.join(log_dir, self.experiment_name)
+        # Keep reference but don't use TensorBoard
         self.tensorboard_dir = os.path.join(self.experiment_dir, "tensorboard")
         
         # Create directories

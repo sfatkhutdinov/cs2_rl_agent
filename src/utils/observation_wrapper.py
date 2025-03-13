@@ -1,123 +1,87 @@
-import gym
+import gymnasium as gym
 import numpy as np
-from typing import Dict, Tuple, Any, Optional
+from typing import Dict, Any, Tuple, List, Optional, Union
 
-
-class ObservationWrapper(gym.Wrapper):
+class FlattenObservationWrapper(gym.Wrapper):
     """
-    A wrapper for creating vectorized observations from dictionary observations.
-    
-    This wrapper enables the environment to work with standard RL algorithms
-    by converting dictionary observations to a format compatible with neural networks.
+    A wrapper that flattens dictionary observations into a single array.
+    This is useful for environments that use dictionary observations but need to work with
+    algorithms that expect a single array.
     """
     
     def __init__(self, env):
         """
-        Initialize the observation wrapper.
+        Initialize the wrapper.
         
         Args:
             env: The environment to wrap
         """
         super().__init__(env)
         
-        # Check if the observation space is a dictionary
-        assert isinstance(env.observation_space, gym.spaces.Dict), \
-            "ObservationWrapper only works with Dict observation spaces"
+        # Determine the shape of the flattened observation
+        sample_obs = self.env.observation_space.sample()
+        flattened_obs = self._flatten_observation(sample_obs)
         
-        # Extract spaces from the dictionary
-        self.observation_keys = list(env.observation_space.spaces.keys())
-        
-        # Build a new observation space
-        self.observation_spaces = {}
-        
-        # Track flattened spaces for Box spaces
-        flattened_spaces = {}
-        
-        # Process each space in the observation
-        for key, space in env.observation_space.spaces.items():
-            if isinstance(space, gym.spaces.Box):
-                # For continuous spaces (e.g., metrics, screenshots)
-                shape = space.shape
-                if len(shape) == 1:
-                    # For 1D arrays like metrics
-                    flattened_spaces[key] = (0, shape[0])
-                    self.observation_spaces[key] = shape[0]
-                else:
-                    # For images/screenshots
-                    # Keep images as separate observations
-                    self.observation_spaces[key] = space
-            elif isinstance(space, gym.spaces.Discrete):
-                # For discrete spaces
-                flattened_spaces[key] = (0, 1)
-                self.observation_spaces[key] = 1
-            else:
-                # For other spaces (e.g., MultiDiscrete)
-                # This may need further customization
-                self.observation_spaces[key] = space
-        
-        # Create the new observation space
-        # For SB3's MultiInputPolicy, we need to define the new spaces as a dict
-        self.observation_space = gym.spaces.Dict({
-            k: v for k, v in env.observation_space.spaces.items()
-        })
+        # Create a new observation space
+        self.observation_space = gym.spaces.Box(
+            low=-float('inf'),
+            high=float('inf'),
+            shape=flattened_obs.shape,
+            dtype=np.float32
+        )
     
-    def _process_obs(self, obs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+    def _flatten_observation(self, obs: Dict[str, np.ndarray]) -> np.ndarray:
         """
-        Process the observation to convert it into the format expected by the model.
+        Flatten a dictionary observation into a single array.
         
         Args:
-            obs: Dictionary observation from the environment
+            obs: Dictionary observation
             
         Returns:
-            Processed observation dictionary
+            Flattened observation
         """
-        processed_obs = {}
+        # Create a fixed-size array to ensure consistent shape
+        flattened = np.zeros(58, dtype=np.float32)
         
-        for key, value in obs.items():
-            if isinstance(value, np.ndarray):
-                # Ensure the array is in the right dtype
-                if value.dtype == np.float64:
-                    value = value.astype(np.float32)
-                    
-                # Make sure images have the right shape and range
-                if len(value.shape) > 1:  # It's an image
-                    # Check if it's grayscale and needs reshaping
-                    if len(value.shape) == 2:
-                        value = np.expand_dims(value, axis=-1)
-                    
-                    # Normalize image to [0, 1] if not already
-                    if value.max() > 1.0:
-                        value = value / 255.0
-                        
-                processed_obs[key] = value
-            else:
-                # Handle non-ndarray values
-                processed_obs[key] = value
-                
-        return processed_obs
+        # Fill in the values we have
+        index = 0
+        
+        # Process each key in a consistent order
+        for key in sorted(obs.keys()):
+            if key != 'vision':  # Skip vision data
+                value = obs[key]
+                if isinstance(value, np.ndarray):
+                    flat_value = value.flatten()
+                    # Ensure we don't exceed the array size
+                    size = min(len(flat_value), 58 - index)
+                    flattened[index:index+size] = flat_value[:size]
+                    index += size
+                elif isinstance(value, (int, float)):
+                    if index < 58:
+                        flattened[index] = float(value)
+                        index += 1
+        
+        return flattened
     
-    def reset(self, **kwargs) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
+    def reset(self, **kwargs):
         """
-        Reset the environment and process the observation.
+        Reset the environment.
         
-        Args:
-            **kwargs: Keyword arguments to pass to the environment's reset method
-            
         Returns:
-            Tuple of (observation, info)
+            Flattened observation
         """
         obs, info = self.env.reset(**kwargs)
-        return self._process_obs(obs), info
+        return self._flatten_observation(obs), info
     
-    def step(self, action) -> Tuple[Dict[str, np.ndarray], float, bool, bool, Dict[str, Any]]:
+    def step(self, action) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         """
-        Take a step in the environment and process the observation.
+        Take a step in the environment.
         
         Args:
             action: Action to take
             
         Returns:
-            Tuple of (observation, reward, terminated, truncated, info)
+            Tuple of (flattened_observation, reward, done, truncated, info)
         """
-        obs, reward, terminated, truncated, info = self.env.step(action)
-        return self._process_obs(obs), reward, terminated, truncated, info 
+        obs, reward, done, truncated, info = self.env.step(action)
+        return self._flatten_observation(obs), reward, done, truncated, info 

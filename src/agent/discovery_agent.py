@@ -57,9 +57,17 @@ class DiscoveryAgent:
             policy_kwargs["lstm_hidden_size"] = self.config.get("model", {}).get("lstm_hidden_size", 64)
             policy_kwargs["net_arch"] = [dict(pi=[64, 64], vf=[64, 64])]
         
+        # Determine the policy type based on the observation space
+        if hasattr(self.env.observation_space, 'spaces'):
+            # Dictionary observation space
+            policy = "MultiInputPolicy"
+        else:
+            # Flattened observation space
+            policy = "MlpPolicy"
+        
         # Initialize the PPO model
         self.model = PPO(
-            policy="MlpPolicy",
+            policy=policy,
             env=self.env,
             learning_rate=self.config.get("model", {}).get("learning_rate", 3e-4),
             n_steps=self.config.get("model", {}).get("n_steps", 2048),
@@ -105,36 +113,90 @@ class DiscoveryAgent:
         Train the agent for a specified number of timesteps.
         
         Args:
-            total_timesteps: Number of timesteps to train for
-            callback: Optional callback for tracking progress
-        
+            total_timesteps: Total number of timesteps to train for
+            callback: Optional callback function
+            
         Returns:
-            Training metrics
+            Trained model
         """
-        self.logger.info(f"Starting training for {total_timesteps} timesteps")
-        
         callbacks = self._setup_callbacks(callback)
         
-        # Train the model
-        self.model.learn(
-            total_timesteps=total_timesteps,
-            callback=callbacks,
-            progress_bar=True
-        )
+        self.logger.info(f"Starting training for {total_timesteps} timesteps")
         
-        self.total_timesteps += total_timesteps
+        try:
+            self.model.learn(
+                total_timesteps=total_timesteps,
+                callback=callbacks,
+                log_interval=10
+            )
+            
+            # Save the final model
+            self.save(os.path.join(self.model_dir, "final_model"))
+            
+            self.logger.info("Training completed successfully")
+            return self.model
+            
+        except Exception as e:
+            self.logger.error(f"Error during training: {str(e)}")
+            # Try to save the model in case of error
+            try:
+                self.save(os.path.join(self.model_dir, "emergency_save"))
+                self.logger.info("Emergency model save completed")
+            except:
+                self.logger.error("Failed to save model after error")
+            raise e
+    
+    def train_episode(self, timesteps_per_episode: int):
+        """
+        Train the agent for a single episode.
         
-        # Save the final model
-        final_model_path = os.path.join(self.model_dir, "final_model")
-        self.model.save(final_model_path)
-        self.logger.info(f"Saved final model to {final_model_path}")
+        Args:
+            timesteps_per_episode: Maximum number of timesteps for this episode
+            
+        Returns:
+            Dictionary with episode information
+        """
+        self.logger.info(f"Training episode with {timesteps_per_episode} timesteps")
         
-        # Return training metrics
-        return {
-            "total_timesteps": self.total_timesteps,
-            "total_episodes": self.total_episodes,
-            "discovered_elements": len(self.discovered_elements)
+        # Set up episode tracking
+        episode_reward = 0
+        episode_length = 0
+        episode_metrics = {}
+        
+        # Reset the environment
+        obs, _ = self.env.reset()
+        done = False
+        
+        # Run the episode
+        for _ in range(timesteps_per_episode):
+            # Select action
+            action, _ = self.model.predict(obs, deterministic=False)
+            
+            # Execute action
+            next_obs, reward, terminated, truncated, info = self.env.step(action)
+            done = terminated or truncated
+            
+            # Update episode tracking
+            episode_reward += reward
+            episode_length += 1
+            
+            # Update observation
+            obs = next_obs
+            
+            # Break if episode is done
+            if done:
+                break
+        
+        # Collect episode information
+        episode_info = {
+            "reward": episode_reward,
+            "length": episode_length,
+            "success": episode_reward > 0,  # Simple success metric
+            "metrics": episode_metrics
         }
+        
+        self.logger.info(f"Episode completed: reward={episode_reward:.2f}, length={episode_length}")
+        return episode_info
     
     def predict(self, observation, deterministic=False):
         """

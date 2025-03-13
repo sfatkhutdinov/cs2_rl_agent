@@ -54,7 +54,10 @@ def test_create():
             "include_visual": True
         }
         
-        # Try to create the environment
+        # Create a CS2Environment instance first
+        base_env = CS2Environment(base_env_config)
+        
+        # Try to create the environment with the base environment
         env = DiscoveryEnvironment(
             base_env_config=base_env_config,
             observation_config=observation_config

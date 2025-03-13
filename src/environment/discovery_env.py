@@ -20,6 +20,7 @@ from src.interface.window_manager import WindowManager
 from src.interface.focus_helper import FocusHelper  # Import our new focus helper
 from src.actions.action_handler import ActionHandler
 from src.actions.menu_explorer import MenuExplorer
+from src.environment.cs2_env import CS2Environment
 
 
 class DiscoveryEnvironment(VisionGuidedCS2Environment):
@@ -29,10 +30,7 @@ class DiscoveryEnvironment(VisionGuidedCS2Environment):
     """
     
     def __init__(self, 
-                 base_env_config: Dict[str, Any] = None,
-                 observation_config: Dict[str, Any] = None,
-                 vision_config: Dict[str, Any] = None,
-                 use_fallback_mode: bool = True,
+                 config: Dict[str, Any] = None,
                  discovery_frequency: float = 0.3,
                  tutorial_frequency: float = 0.3, 
                  random_action_frequency: float = 0.2,
@@ -42,10 +40,7 @@ class DiscoveryEnvironment(VisionGuidedCS2Environment):
         Initialize the discovery-based environment.
         
         Args:
-            base_env_config: Configuration for the base environment
-            observation_config: Configuration for observations
-            vision_config: Configuration for vision guidance
-            use_fallback_mode: Whether to use fallback mode if game connection fails
+            config: Configuration dictionary
             discovery_frequency: How often to try discovering new UI elements
             tutorial_frequency: How often to look for tutorials
             random_action_frequency: How often to perform completely random actions
@@ -65,6 +60,20 @@ class DiscoveryEnvironment(VisionGuidedCS2Environment):
         self.tutorial_frequency = tutorial_frequency
         self.random_action_frequency = random_action_frequency
         self.exploration_randomness = exploration_randomness
+        
+        # Add vision guidance settings
+        self.vision_guidance_enabled = True
+        self.vision_guidance_frequency = 0.2
+        self.consecutive_vision_attempts = 0
+        self.max_consecutive_attempts = 3
+        self.vision_cooldown = 0
+        self.vision_cooldown_steps = 10
+        self.last_vision_query = 0
+        self.vision_cache_ttl = 300  # 5 minutes in seconds
+        self.vision_cache = {}
+        self.background_analysis = None
+        self.vision_update_lock = threading.Lock()
+        self.vision_guidance_cache = {}
         
         # Create overlay window for action feedback
         self.overlay_window = None
@@ -118,12 +127,47 @@ class DiscoveryEnvironment(VisionGuidedCS2Environment):
             on_focus_restored=on_focus_restored
         )
         
-        # Call the parent constructor which will set up the environment
-        super().__init__(
-            base_env_config=base_env_config,
-            observation_config=observation_config,
-            vision_config=vision_config,
-            use_fallback_mode=use_fallback_mode,
+        # Create a base environment to pass to the parent
+        from src.environment.cs2_env import CS2Environment
+        
+        # Extract configs from the main config
+        base_env_config = config.get("environment", {}) if config else {}
+        observation_config = config.get("observation", {}) if config else {}
+        vision_config = config.get("vision", {}) if config else {}
+        
+        # Create a proper config for CS2Environment
+        cs2_config = {
+            "environment": base_env_config,
+            "observation": observation_config,
+            "vision": vision_config,
+            "interface": {
+                "type": "vision",
+                "vision": {
+                    "screen_region": [0, 0, 1920, 1080],
+                    "debug_mode": True,
+                    "debug_dir": "debug/vision",
+                    "use_ollama": True,
+                    "ollama_model": "llama3.2-vision:latest",
+                    "ollama_url": "http://localhost:11434/api/generate",
+                    "ocr_confidence": 0.6,
+                    "template_matching_threshold": 0.8,
+                    "max_retries": 3,
+                    "retry_delay": 1.0
+                }
+            }
+        }
+        
+        # Create the base environment
+        base_env = CS2Environment(cs2_config)
+        
+        # Call the parent constructor with the base environment
+        from src.environment.autonomous_env import AutonomousEnvironment
+        AutonomousEnvironment.__init__(
+            self,
+            base_env=base_env,
+            exploration_frequency=discovery_frequency,
+            random_action_frequency=random_action_frequency,
+            menu_exploration_buffer_size=50,
             logger=self.logger
         )
         
@@ -166,6 +210,10 @@ class DiscoveryEnvironment(VisionGuidedCS2Environment):
         self.logger.info(f"Reward focus set to: {self.reward_focus}")
         
         self.logger.info(f"Discovery environment initialized with action feedback: {self.show_action_feedback}")
+        
+        # Initialize action handlers
+        self.action_handlers = []
+        self.env = None
     
     def setup_overlay_window(self):
         """Create a semi-transparent overlay window to display actions"""
@@ -910,38 +958,108 @@ class DiscoveryEnvironment(VisionGuidedCS2Environment):
         """Set the delay between actions"""
         self._action_delay = max(0.0, min(5.0, value))  # Clamp between 0 and 5 seconds
     
-    def reset(self, **kwargs) -> Tuple[np.ndarray, Dict[str, Any]]:
+    def reset(self, **kwargs):
         """
-        Reset the environment and discovery state.
+        Reset the environment.
         
         Returns:
-            Tuple of (observation, info)
+            Initial observation
         """
-        # Reset the parent environment
-        obs, info = super().reset(**kwargs)
+        # Reset the base environment
+        obs = self.base_env.reset(**kwargs)
         
-        # Reset the action sequence
+        # Reset internal state
         self.current_action_sequence = []
+        self.episode_steps = 0
+        self.total_reward = 0.0
+        self.last_action = None
+        self.last_reward = 0.0
         
-        # Reset tutorial tracking for this episode
-        self.current_tutorial = None
-        self.tutorial_progress = 0
+        # Reset focus
+        self.focus_helper.ensure_focus()
         
-        # Include discovery info
-        info["discovery"] = {
-            "discovered_ui_elements": len(self.discovered_ui_elements),
-            "discovered_actions": len(self.discovered_actions),
-            "completed_tutorials": len(self.discovered_tutorials),
-            "discovery_phase": self.discovery_phase,
-            "discovery_stats": self.stats
-        }
+        # Reset action feedback
+        if self.overlay_window:
+            self.display_action("RESET", color="blue")
         
-        # Focus the game window
-        if self.window_manager:
-            self.window_manager.focus_window()
-        time.sleep(1)  # Give time for the window to gain focus
+        # Return the observation
+        return self._process_observation(obs)
+    
+    def step(self, action: int) -> Tuple[Dict[str, np.ndarray], float, bool, bool, Dict[str, Any]]:
+        """
+        Take a step in the environment.
         
-        return obs, info
+        Args:
+            action: The action to take
+            
+        Returns:
+            Tuple of (observation, reward, terminated, truncated, info)
+        """
+        # Ensure window focus before taking action
+        if not self.focus_helper.is_window_focused():
+            self.logger.warning("Window not focused before action, attempting to regain focus")
+            self.focus_helper.ensure_focus()
+            time.sleep(0.2)  # Small delay after focus attempt
+        
+        # Take the step in the base environment
+        obs, reward, done, truncated, info = self.base_env.step(action)
+        
+        # Process the observation to ensure it's compatible with the model
+        obs = self._process_observation(obs)
+        
+        # Update internal state
+        self.episode_steps += 1
+        self.total_steps += 1
+        self.total_reward += reward
+        self.last_action = action
+        self.last_reward = reward
+        
+        # Update action statistics
+        action_str = str(action)
+        if action_str not in self.action_stats:
+            self.action_stats[action_str] = {
+                "count": 0,
+                "total_reward": 0.0,
+                "success_count": 0
+            }
+        self.action_stats[action_str]["count"] += 1
+        self.action_stats[action_str]["total_reward"] += reward
+        if reward > 0:
+            self.action_stats[action_str]["success_count"] += 1
+        
+        # Display action feedback
+        if self.overlay_window:
+            color = "green" if reward > 0 else "red" if reward < 0 else "white"
+            self.display_action(f"Action: {action}, Reward: {reward:.2f}", color=color)
+        
+        return obs, reward, done, truncated, info
+    
+    def _process_observation(self, obs):
+        """
+        Process the observation to ensure it's compatible with the model.
+        
+        Args:
+            obs: Original observation
+            
+        Returns:
+            Processed observation
+        """
+        # If the observation is a dictionary, ensure all values are numpy arrays
+        if isinstance(obs, dict):
+            processed_obs = {}
+            for key, value in obs.items():
+                if isinstance(value, np.ndarray):
+                    processed_obs[key] = value
+                elif isinstance(value, (int, float)):
+                    processed_obs[key] = np.array([value], dtype=np.float32)
+                else:
+                    try:
+                        processed_obs[key] = np.array(value, dtype=np.float32)
+                    except:
+                        self.logger.warning(f"Could not convert observation key {key} to numpy array. Using zeros.")
+                        processed_obs[key] = np.zeros((1,), dtype=np.float32)
+            return processed_obs
+        return obs
     
     def _save_successful_sequence(self, sequence: Dict[str, Any]) -> None:
         """Save a successful action sequence to file."""

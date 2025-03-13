@@ -31,7 +31,7 @@ base_env_config:
 
 # Ollama configuration
 ollama_config:
-  model: "granite3.2-vision:latest"  # Vision model to use
+  model: "llama3.2-vision:latest"  # Vision model to use
   url: "http://localhost:11434/api/generate"  # Ollama API endpoint
   timeout: 30  # API timeout in seconds
   max_retries: 3  # Maximum number of retries for API calls
@@ -173,7 +173,7 @@ observation:
 vision:
   enabled: true                    # Enable vision guidance
   vision_guidance_frequency: 0.1   # Reduced from 0.4 to prevent Ollama overload
-  ollama_model: "granite3.2-vision:latest"  # Vision model to use
+  ollama_model: "llama3.2-vision:latest"  # Vision model to use
   ollama_url: "http://localhost:11434/api/generate"  # Ollama API URL
   response_timeout: 30             # Reduced from 60 to fail faster when Ollama is unresponsive
   max_tokens: 800                  # Reduced from 1024 to get faster responses

@@ -9,6 +9,9 @@ import numpy as np
 from enum import Enum
 from typing import Dict, Any, List, Optional, Tuple
 
+# Import the wrapper
+from src.utils.observation_wrapper import FlattenObservationWrapper
+
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("AdaptiveAgent")
@@ -162,31 +165,46 @@ class AdaptiveAgent:
         
         # Initialize environment and agent based on current mode
         if self.current_mode == TrainingMode.DISCOVERY and TrainingMode.DISCOVERY not in self.environments:
-            self.environments[TrainingMode.DISCOVERY] = DiscoveryEnvironment(mode_config)
+            env = DiscoveryEnvironment(mode_config)
+            # Wrap the environment to handle dictionary observations
+            wrapped_env = FlattenObservationWrapper(env)
+            self.environments[TrainingMode.DISCOVERY] = wrapped_env
             self.agents[TrainingMode.DISCOVERY] = DiscoveryAgent(
                 self.environments[TrainingMode.DISCOVERY], mode_config
             )
             
         elif self.current_mode == TrainingMode.VISION and TrainingMode.VISION not in self.environments:
-            self.environments[TrainingMode.VISION] = VisionEnvironment(mode_config)
+            env = VisionEnvironment(mode_config)
+            # Wrap the environment to handle dictionary observations
+            wrapped_env = FlattenObservationWrapper(env)
+            self.environments[TrainingMode.VISION] = wrapped_env
             self.agents[TrainingMode.VISION] = VisionAgent(
                 self.environments[TrainingMode.VISION], mode_config
             )
             
         elif self.current_mode == TrainingMode.AUTONOMOUS and TrainingMode.AUTONOMOUS not in self.environments:
-            self.environments[TrainingMode.AUTONOMOUS] = AutonomousEnvironment(mode_config)
+            env = AutonomousEnvironment(mode_config)
+            # Wrap the environment to handle dictionary observations
+            wrapped_env = FlattenObservationWrapper(env)
+            self.environments[TrainingMode.AUTONOMOUS] = wrapped_env
             self.agents[TrainingMode.AUTONOMOUS] = AutonomousAgent(
                 self.environments[TrainingMode.AUTONOMOUS], mode_config
             )
             
         elif self.current_mode == TrainingMode.TUTORIAL and TrainingMode.TUTORIAL not in self.environments:
-            self.environments[TrainingMode.TUTORIAL] = TutorialEnvironment(mode_config)
+            env = TutorialEnvironment(mode_config)
+            # Wrap the environment to handle dictionary observations
+            wrapped_env = FlattenObservationWrapper(env)
+            self.environments[TrainingMode.TUTORIAL] = wrapped_env
             self.agents[TrainingMode.TUTORIAL] = TutorialAgent(
                 self.environments[TrainingMode.TUTORIAL], mode_config
             )
             
         elif self.current_mode == TrainingMode.STRATEGIC and TrainingMode.STRATEGIC not in self.environments:
-            self.environments[TrainingMode.STRATEGIC] = StrategicEnvironment(mode_config)
+            env = StrategicEnvironment(mode_config)
+            # Wrap the environment to handle dictionary observations
+            wrapped_env = FlattenObservationWrapper(env)
+            self.environments[TrainingMode.STRATEGIC] = wrapped_env
             self.agents[TrainingMode.STRATEGIC] = StrategicAgent(
                 self.environments[TrainingMode.STRATEGIC], mode_config
             )

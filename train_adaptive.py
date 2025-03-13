@@ -20,6 +20,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import Dict, Any, Optional
 
+# Import the wrapper
+from src.utils.observation_wrapper import FlattenObservationWrapper
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
