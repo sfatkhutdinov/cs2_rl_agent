@@ -13,7 +13,7 @@ echo Training for %TIMESTEPS% timesteps in %MODE% mode
 REM Check if virtual environment exists and activate it
 if exist venv\Scripts\activate.bat (
     echo Activating virtual environment...
-    call venv\Scripts\activate.bat
+    call conda activate cs2_agent
 )
 
 REM Install required dependencies

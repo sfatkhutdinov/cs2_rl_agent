@@ -1,6 +1,6 @@
 @echo off
 echo Activating virtual environment...
-call venv\Scripts\activate
+call conda activate cs2_agent
 
 echo Checking if Ollama is running...
 curl -s http://localhost:11434/api/tags > nul
@@ -14,7 +14,7 @@ echo Warming up the Granite model...
 curl -s -X POST http://localhost:11434/api/generate -d "{\"model\":\"granite3.2-vision:latest\",\"prompt\":\"Hello, are you ready to analyze game screens?\",\"stream\":false}" > nul
 
 echo Installing required dependencies...
-pip install -r requirements.txt
+REM Using conda environment with pre-installed packages
 
 echo Checking directory structure...
 python check_directories.py

@@ -23,12 +23,12 @@ if not exist venv (
 
 REM Activate virtual environment
 echo Activating virtual environment...
-call venv\Scripts\activate.bat
+call conda activate cs2_agent
 
 REM Install dependencies if needed
 if not exist venv\Lib\site-packages\stable_baselines3 (
     echo Installing dependencies...
-    pip install -r requirements.txt
+    REM Using conda environment with pre-installed packages
     
     if %errorlevel% neq 0 (
         echo Failed to install dependencies.

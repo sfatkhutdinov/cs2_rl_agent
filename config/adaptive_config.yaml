@@ -1,0 +1,114 @@
+# Adaptive Agent Configuration
+# This configuration controls how the agent switches between different modes
+
+# Agent type
+agent_type: "adaptive"
+
+# Mode switching thresholds
+mode_switching:
+  # Confidence threshold for discovery mode before switching to vision mode
+  min_discovery_confidence: 0.7
+  
+  # Minimum number of UI elements to discover before considering switching
+  min_ui_elements: 20
+  
+  # Minimum number of tutorial steps to complete before considering switching
+  min_tutorial_steps: 5
+  
+  # Maximum number of episodes without progress before trying different mode
+  max_stuck_episodes: 5
+  
+  # Confidence threshold for vision mode before switching to autonomous mode
+  min_vision_confidence: 0.6
+  
+  # Confidence threshold for autonomous mode before switching to strategic mode
+  min_autonomous_confidence: 0.8
+  
+  # Minimum game cycles completed before allowing strategic mode transition
+  min_game_cycles: 10
+
+# Training settings
+training:
+  # Whether to auto-focus on game window
+  auto_focus: true
+  
+  # Total timesteps to train
+  total_timesteps: 10000
+  
+  # Learning rate
+  learning_rate: 0.0003
+  
+  # Training batch size
+  batch_size: 64
+  
+  # Gamma (discount factor)
+  gamma: 0.99
+  
+  # Number of steps per update
+  n_steps: 2048
+  
+  # Which mode to start training with
+  starting_mode: "discovery"  # Options: discovery, tutorial, vision, autonomous, strategic
+
+# Environment settings
+environment:
+  # Base reward scales for different achievements
+  reward_scales:
+    ui_element_discovered: 10.0
+    tutorial_step_completed: 20.0
+    objective_completed: 50.0
+    positive_feedback: 5.0
+    negative_feedback: -5.0
+  
+  # Time between actions (seconds)
+  action_delay: 0.5
+  
+  # Maximum episode steps
+  max_episode_steps: 500
+  
+  # Whether to use vision model for UI understanding
+  use_vision_model: true
+  
+  # Vision model endpoint
+  vision_model_url: "http://localhost:11434/api/generate"
+  
+  # Vision model name
+  vision_model: "llama3.2-vision:latest"
+
+# Knowledge transfer settings
+knowledge_transfer:
+  # Whether to transfer knowledge between modes
+  enabled: true
+  
+  # Which aspects to transfer
+  transfer_ui_elements: true
+  transfer_action_mappings: true
+  transfer_reward_signals: true
+  
+  # How much to weight prior knowledge vs new learning (0-1)
+  knowledge_retention: 0.7
+
+# Logging settings
+logging:
+  # Log level
+  level: "INFO"
+  
+  # Whether to log mode switches
+  log_mode_switches: true
+  
+  # Whether to log metrics
+  log_metrics: true
+  
+  # Tensorboard logging
+  use_tensorboard: true
+  
+  # Checkpoint frequency (steps)
+  checkpoint_frequency: 1000
+
+# Paths to individual mode configs
+mode_configs:
+  discovery: "config/discovery_config.yaml"
+  tutorial: "config/tutorial_guided_config.yaml" 
+  vision: "config/vision_guided_config.yaml"
+  autonomous: "config/autonomous_config.yaml"
+  strategic: "config/strategic_config.yaml" 

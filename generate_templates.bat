@@ -4,7 +4,7 @@ echo ---------------------------------------------------
 
 REM Try to activate virtual environment
 if exist venv\Scripts\activate.bat (
-    call venv\Scripts\activate.bat
+    call conda activate cs2_agent
 ) else if exist .venv\Scripts\activate.bat (
     call .venv\Scripts\activate.bat
 ) else if exist env\Scripts\activate.bat (

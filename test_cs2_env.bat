@@ -1,6 +1,6 @@
 @echo off
 echo Activating virtual environment...
-call venv\Scripts\activate
+call conda activate cs2_agent
 
 echo Testing CS2Environment...
 python test_cs2_env.py

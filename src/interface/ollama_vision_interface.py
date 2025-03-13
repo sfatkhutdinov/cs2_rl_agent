@@ -125,7 +125,7 @@ class OllamaVisionInterface(AutoVisionInterface):
         # Ollama configuration
         self.ollama_config = config.get("ollama", {})
         self.ollama_url = self.ollama_config.get("url", "http://localhost:11434/api/generate")
-        self.ollama_model = self.ollama_config.get("model", "granite3.2-vision:latest")
+        self.ollama_model = self.ollama_config.get("model", "llama3.2-vision:latest")
         self.max_tokens = self.ollama_config.get("max_tokens", 1000)
         self.temperature = self.ollama_config.get("temperature", 0.7)
         

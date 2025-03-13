@@ -35,9 +35,12 @@ def check_cuda_version():
             print("1. Incompatible CUDA version")
             print("2. PyTorch was installed without CUDA support")
             print("3. GPU drivers need to be updated")
+            print("\nTry reinstalling PyTorch with CUDA support using:")
+            print("conda install pytorch torchvision pytorch-cuda -c pytorch -c nvidia")
             return False
     except ImportError:
         print("PyTorch not installed. Cannot check CUDA compatibility.")
+        print("Install PyTorch with: conda install pytorch torchvision pytorch-cuda -c pytorch -c nvidia")
         return False
 
 def check_tensorflow_gpu():
@@ -48,19 +51,24 @@ def check_tensorflow_gpu():
         print(f"TensorFlow version: {tf.__version__}")
         print(f"TensorFlow GPU devices: {gpus}")
         if gpus:
-            print("TensorFlow can access the GPU.")
+            print("TensorFlow GPU support is enabled")
             for gpu in gpus:
-                print(f"  {gpu}")
+                print(f"  Name: {gpu.name}, Type: {gpu.device_type}")
             return True
         else:
-            print("TensorFlow cannot see any GPU.")
+            print("TensorFlow GPU support is not enabled.")
             print("Possible causes:")
-            print("1. TensorFlow was not installed with GPU support")
-            print("2. Incompatible CUDA/cuDNN versions")
-            print("3. GPU drivers need to be updated")
+            print("1. GPU drivers are not compatible")
+            print("2. TensorFlow was installed without GPU support")
+            print("\nTry reinstalling TensorFlow with GPU support using:")
+            print("conda install tensorflow-gpu -c conda-forge")
             return False
     except ImportError:
         print("TensorFlow not installed. Cannot check GPU compatibility.")
+        print("Install TensorFlow with: conda install tensorflow-gpu -c conda-forge")
+        return False
+    except Exception as e:
+        print(f"Error checking TensorFlow GPU: {e}")
         return False
 
 def setup_environment_variables():
@@ -140,7 +148,8 @@ def setup_cuda_paths():
             r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.7",
             r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.6",
             r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.0",
-            r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.1"
+            r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.1",
+            r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8"
         ]
         
         for cuda_path in cuda_paths:

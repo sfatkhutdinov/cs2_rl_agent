@@ -1,0 +1,131 @@
+# Strategic Agent Configuration
+# This configuration file is used for training an agent that autonomously discovers game strategies
+
+# Basic environment settings
+environment:
+  screen_size: [1920, 1080]  # Screen resolution
+  reward_scale: 1.0          # Scaling factor for rewards
+  max_episode_steps: 10000   # Maximum steps per episode
+  game_speed: "normal"       # Game speed setting
+
+# Agent model
+model:
+  type: "PPO"                # Algorithm type
+  policy: "MlpLstmPolicy"    # Policy network architecture
+  learning_rate: 1.0e-4      # Learning rate
+  n_steps: 2048              # Number of steps to collect before updating
+  batch_size: 64             # Minibatch size
+  n_epochs: 10               # Number of epochs when optimizing
+  gamma: 0.99                # Discount factor
+  gae_lambda: 0.95           # GAE lambda parameter
+  clip_range: 0.2            # PPO clip range
+  normalize_advantage: true  # Normalize advantage
+  ent_coef: 0.01             # Entropy coefficient
+  vf_coef: 0.5               # Value function coefficient
+  max_grad_norm: 0.5         # Maximum gradient norm
+  use_sde: false             # Whether to use state-dependent exploration
+  sde_sample_freq: -1        # SDE sample frequency
+
+  # LSTM-specific settings
+  lstm_hidden_size: 256      # LSTM hidden layer size
+  lstm_layers: 1             # Number of LSTM layers
+
+# Training parameters
+training:
+  total_timesteps: 10000000   # Train for 10 million steps
+  n_envs: 1                   # Only use 1 environment (game instance)
+  checkpoint_freq: 50000      # Save checkpoint every 50k steps
+  evaluate_during_training: true
+  eval_freq: 100000           # Evaluate every 100k steps
+  eval_episodes: 3            # Number of episodes for evaluation
+  
+  # Progress tracking
+  log_interval: 10
+  verbose: 1
+
+# Paths for saving data
+paths:
+  log_dir: "logs/strategic"
+  model_dir: "models/strategic"
+  tensorboard_dir: "tensorboard/strategic"
+  data_dir: "data/strategic"
+
+# Strategic learning parameters
+strategic_learning:
+  # Exploration vs. Exploitation
+  exploration_phase_steps: 500000     # Initial exploration phase
+  balanced_phase_steps: 1000000       # Balanced exploration/exploitation phase
+  optimization_phase_steps: 3000000   # Optimization phase
+  
+  # Initial exploration settings
+  start_with_exploration: true
+  initial_exploration_rate: 0.8
+  min_exploration_rate: 0.1
+  exploration_decay: 0.9999
+  
+  # Strategic discovery thresholds
+  min_metrics_to_discover: 5          # Minimum metrics to discover before optimization
+  min_causal_links: 10                # Minimum causal links to discover 
+  max_exploration_episodes: 50        # Maximum episodes dedicated to pure exploration
+  
+  # Reward components and weights
+  extrinsic_reward_weight: 0.5        # Weight for original game rewards
+  discovery_reward_weight: 0.2        # Weight for discovering new metrics/relationships
+  causal_reward_weight: 0.15          # Weight for discovering causal links
+  progress_reward_weight: 0.15        # Weight for making progress on metrics
+  
+  # Action-effect modeling
+  action_effect_window: 5             # Steps to track for delayed effects
+  min_samples_for_correlation: 3      # Minimum samples needed for correlation
+  correlation_threshold: 0.6          # Threshold for establishing causal links
+  
+  # Goal inference
+  goal_confidence_threshold: 0.7      # Confidence threshold for goal inference
+  min_goal_importance: 0.5            # Minimum importance for a goal to be considered significant
+  
+  # Multi-step strategy discovery
+  strategy_path_length: 3             # Maximum length of action chains to discover
+  strategy_discount_factor: 0.9       # Discount factor for delayed effects in strategies
+  strategy_count_target: 10           # Target number of strategies to discover
+  
+  # Strategic confidence metrics
+  metrics_for_max_confidence: 10      # Number of metrics needed for max confidence
+  causal_links_for_max_confidence: 20 # Number of causal links needed for max confidence
+
+# Knowledge bootstrapping (optional pre-defined domain knowledge)
+knowledge_bootstrapping:
+  # Metrics to prioritize discovering
+  important_metrics:
+    - "population"
+    - "money"
+    - "happiness"
+    - "land_value"
+    - "traffic"
+    - "pollution"
+  
+  # Metric types (positive = maximize, negative = minimize)
+  metric_types:
+    positive:
+      - "population"
+      - "money"
+      - "happiness"
+      - "land_value"
+    negative:
+      - "traffic"
+      - "pollution"
+      - "crime"
+      - "unemployment"
+  
+  # Optional basic causal links to bootstrap learning
+  causal_hints:
+    - action: "build_residential_zone"
+      affects: "population"
+      direction: "positive"
+    
+    - action: "build_commercial_zone"
+      affects: "money"
+      direction: "positive"
+      
+    - action: "build_industrial_zone"
+      affects: "pollution"
+      direction: "negative" 

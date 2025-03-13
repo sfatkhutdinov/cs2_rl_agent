@@ -52,7 +52,7 @@ def test_create():
             },
             "ollama": {
                 "url": "http://localhost:11434/api/generate",
-                "model": "granite3.2-vision:latest",
+                "model": "llama3.2-vision:latest",
                 "max_tokens": 1000,
                 "temperature": 0.7
             },

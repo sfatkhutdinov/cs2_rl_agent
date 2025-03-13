@@ -6,7 +6,7 @@ echo =====================================
 REM Activate virtual environment if it exists
 if exist venv\Scripts\activate.bat (
     echo Activating virtual environment...
-    call venv\Scripts\activate.bat
+    call conda activate cs2_agent
 )
 
 REM Set environment variables for GPU

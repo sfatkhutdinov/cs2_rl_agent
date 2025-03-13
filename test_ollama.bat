@@ -1,6 +1,6 @@
 @echo off
 echo Activating virtual environment...
-call venv\Scripts\activate
+call conda activate cs2_agent
 
 echo Running Ollama integration test...
 python test_ollama.py

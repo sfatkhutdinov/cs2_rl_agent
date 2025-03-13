@@ -1,6 +1,6 @@
 @echo off
 echo Activating virtual environment...
-call venv\Scripts\activate
+call conda activate cs2_agent
 
 echo Checking if Ollama is running...
 curl -s http://localhost:11434/api/tags > nul
@@ -11,7 +11,7 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 echo Installing required dependencies...
-pip install -r requirements.txt
+REM Using conda environment with pre-installed packages
 
 echo Checking directory structure...
 python check_directories.py

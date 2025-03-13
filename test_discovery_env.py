@@ -28,16 +28,38 @@ def test_create():
     try:
         logging.info("Attempting to create DiscoveryEnvironment instance...")
         from src.environment.discovery_env import DiscoveryEnvironment
-        from src.utils.config_utils import load_config
+        from src.environment.cs2_env import CS2Environment
         
-        # Load a minimal config
-        config = {
-            "environment": {"type": "DiscoveryEnvironment"},
-            "observation": {"include_visual": True}
+        # Create a minimal base environment config
+        base_env_config = {
+            "environment": {
+                "type": "CS2Environment",
+                "action_space": {
+                    "zone": ["residential", "commercial", "industrial"],
+                    "infrastructure": ["road", "water", "electricity"]
+                }
+            },
+            "interface": {
+                "type": "ollama_vision"
+            },
+            "ollama": {
+                "url": "http://localhost:11434/api/generate",
+                "model": "llama3.2-vision:latest"
+            },
+            "use_fallback_mode": True
+        }
+        
+        # Create observation config
+        observation_config = {
+            "include_visual": True
         }
         
         # Try to create the environment
-        env = DiscoveryEnvironment(config)
+        env = DiscoveryEnvironment(
+            base_env_config=base_env_config,
+            observation_config=observation_config
+        )
+        
         logging.info("Successfully created DiscoveryEnvironment instance!")
         return True
     except Exception as e:

@@ -1,6 +1,6 @@
 @echo off
 echo Activating virtual environment...
-call venv\Scripts\activate
+call conda activate cs2_agent
 
 echo Checking if Ollama is running...
 curl -s http://localhost:11434/api/version > nul

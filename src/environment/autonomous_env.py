@@ -1,1176 +1,470 @@
-import logging
-import time
+"""
+Autonomous Environment - Environment with advanced autonomous operation capabilities.
+"""
+
 import os
-import gymnasium as gym
+import logging
 import numpy as np
+from typing import Dict, Any, Optional, Tuple, List
+
+import gymnasium as gym
 from gymnasium import spaces
-from src.interface.auto_vision_interface import AutoVisionInterface
-from src.interface.menu_explorer import MenuExplorer
+
+from src.environment.vision_env import VisionEnvironment
 from src.environment.cs2_env import CS2Environment
-from stable_baselines3.common.monitor import Monitor
-import pyautogui
-from enum import Enum, auto
-from collections import namedtuple
-from typing import Dict, Any, Optional, Union, List, Tuple
 
-# Define action types
-class ActionType(Enum):
-    CAMERA_CONTROL = auto()
-    UI_INTERACTION = auto()
-    GAME_ACTION = auto()
-    KEYBOARD = auto()
-
-# Define action structure
-Action = namedtuple('Action', ['name', 'action_fn', 'action_type'])
-
-class AutonomousCS2Environment(gym.Wrapper):
+class AutonomousEnvironment:
     """
-    A wrapper around the base CS2Environment that adds autonomous exploration
-    capabilities, allowing the agent to fully explore the game on its own.
+    Environment that supports autonomous operation with advanced decision capabilities.
     """
     
-    def __init__(self, 
-                 base_env: Union[CS2Environment, gym.Env], 
-                 exploration_frequency: float = 0.3, 
-                 random_action_frequency: float = 0.2, 
-                 menu_exploration_buffer_size: int = 50, 
+    def __init__(self, base_env, exploration_frequency: float = 0.3, 
+                 random_action_frequency: float = 0.2,
+                 menu_exploration_buffer_size: int = 50,
                  logger: Optional[logging.Logger] = None):
         """
-        Initialize the autonomous environment wrapper.
+        Initialize the autonomous environment.
         
         Args:
-            base_env: The base CS2Environment to wrap
-            exploration_frequency: How often to trigger exploratory behavior (0-1)
-            random_action_frequency: How often to take completely random actions (0-1)
-            menu_exploration_buffer_size: Size of the buffer for storing discovered menu items
+            base_env: The base environment to wrap
+            exploration_frequency: How often to perform exploratory actions
+            random_action_frequency: How often to perform completely random actions
+            menu_exploration_buffer_size: Size of menu exploration buffer
             logger: Logger instance
         """
-        super().__init__(base_env)
-        self.env = base_env
+        self.base_env = base_env
+        self.logger = logger or logging.getLogger("AutonomousEnvironment")
+        
+        # Autonomous-specific settings
         self.exploration_frequency = exploration_frequency
         self.random_action_frequency = random_action_frequency
-        self.logger = logger or logging.getLogger("AutonomousEnv")
+        self.menu_exploration_buffer_size = menu_exploration_buffer_size
         
-        # Set up menu explorer
-        if hasattr(base_env, 'interface') and base_env.interface is not None:
-            self.menu_explorer = MenuExplorer(
-                interface=base_env.interface,
-                buffer_size=menu_exploration_buffer_size,
-                logger=self.logger
+        # Get configuration from base environment
+        self.config = getattr(base_env, 'config', {})
+        self.autonomous_config = self.config.get("autonomous", {})
+        
+        self.use_decision_memory = self.autonomous_config.get("use_decision_memory", True)
+        self.decision_memory_size = self.autonomous_config.get("decision_memory_size", 10)
+        self.decision_memory = []
+        
+        # Set up action and observation spaces
+        self.action_space = self.base_env.action_space
+        self.observation_space = self.base_env.observation_space
+        
+        # Advanced metrics tracking
+        self.performance_metrics = {
+            "success_rate": 0.0,
+            "confidence": 0.0,
+            "efficiency": 0.0,
+            "learning_progress": 0.0
+        }
+        
+        # Extend observation space to include higher-level information
+        self.extend_observation_space()
+        
+        self.logger.info("Autonomous environment initialized")
+    
+    def extend_observation_space(self):
+        """Extend the observation space to include higher-level information."""
+        # Preserve the original observation space
+        self.vision_observation_space = self.observation_space
+        
+        # Get additional observation components
+        additional_spaces = {}
+        
+        # Add metrics to observation if enabled
+        if self.autonomous_config.get("observe_metrics", True):
+            additional_spaces["metrics"] = spaces.Box(
+                low=0.0, 
+                high=1.0, 
+                shape=(4,),  # success, confidence, efficiency, learning
+                dtype=np.float32
             )
+        
+        # Add decision memory to observation if enabled
+        if self.use_decision_memory:
+            additional_spaces["decision_memory"] = spaces.Box(
+                low=-np.inf, 
+                high=np.inf, 
+                shape=(self.decision_memory_size, self.action_space.n),
+                dtype=np.float32
+            )
+        
+        # Create a Dict observation space if we have additional components
+        if additional_spaces:
+            combined_spaces = {
+                "vision": self.vision_observation_space,
+                **additional_spaces
+            }
+            self.observation_space = spaces.Dict(combined_spaces)
+            self.logger.info(f"Extended observation space: {self.observation_space}")
         else:
-            self.logger.warning("No game interface found. Menu exploration will be disabled.")
-            self.menu_explorer = None
-        
-        # Set up action handlers
-        self.action_handlers = []
-        self._setup_action_handlers()
-        
-        # Update the action space
-        self.action_space = spaces.Discrete(len(self.action_handlers))
-        self.logger.info(f"Extended action space from {base_env.action_space.n} to {self.action_space.n} actions")
+            self.logger.info("Using vision observation space without extensions")
     
-    def _setup_action_handlers(self):
-        """Set up the action handlers for the environment"""
-        # Create wrappers for the interface methods
-        actions = [
-            # Define some basic exploration actions
-            Action(
-                name="explore_menu",
-                action_fn=lambda: self._explore_menu(),
-                action_type=ActionType.UI_INTERACTION
-            ),
-            Action(
-                name="explore_ui",
-                action_fn=lambda: self._explore_ui(),
-                action_type=ActionType.UI_INTERACTION
-            ),
-            Action(
-                name="random_action",
-                action_fn=lambda: self._take_random_base_action(),
-                action_type=ActionType.GAME_ACTION
-            ),
-            Action(
-                name="repeat_last_action",
-                action_fn=lambda: self._repeat_last_action(),
-                action_type=ActionType.GAME_ACTION
-            ),
-            # Enhanced camera controls for better exploration
-            Action(
-                name="zoom_in_small",
-                action_fn=lambda: self.env.interface.zoom_with_wheel(3),
-                action_type=ActionType.CAMERA_CONTROL
-            ),
-            Action(
-                name="zoom_in_medium",
-                action_fn=lambda: self.env.interface.zoom_with_wheel(5),
-                action_type=ActionType.CAMERA_CONTROL
-            ),
-            Action(
-                name="zoom_in_large",
-                action_fn=lambda: self.env.interface.zoom_with_wheel(10),
-                action_type=ActionType.CAMERA_CONTROL
-            ),
-            Action(
-                name="zoom_out_small",
-                action_fn=lambda: self.env.interface.zoom_with_wheel(-3),
-                action_type=ActionType.CAMERA_CONTROL
-            ),
-            Action(
-                name="zoom_out_medium",
-                action_fn=lambda: self.env.interface.zoom_with_wheel(-5),
-                action_type=ActionType.CAMERA_CONTROL
-            ),
-            Action(
-                name="zoom_out_large",
-                action_fn=lambda: self.env.interface.zoom_with_wheel(-10),
-                action_type=ActionType.CAMERA_CONTROL
-            ),
-            Action(
-                name="pan_left",
-                action_fn=lambda: self.env.interface.pan_view("left"),
-                action_type=ActionType.CAMERA_CONTROL
-            ),
-            Action(
-                name="pan_right",
-                action_fn=lambda: self.env.interface.pan_view("right"),
-                action_type=ActionType.CAMERA_CONTROL
-            ),
-            Action(
-                name="pan_up",
-                action_fn=lambda: self.env.interface.pan_view("up"),
-                action_type=ActionType.CAMERA_CONTROL
-            ),
-            Action(
-                name="pan_down",
-                action_fn=lambda: self.env.interface.pan_view("down"),
-                action_type=ActionType.CAMERA_CONTROL
-            ),
-        ]
-        
-        # Add camera rotation actions
-        actions.extend([
-            Action(
-                name="rotate_camera_left",
-                action_fn=lambda: self.env.interface.rotate_camera_left(),
-                action_type=ActionType.CAMERA_CONTROL
-            ),
-            Action(
-                name="rotate_camera_right",
-                action_fn=lambda: self.env.interface.rotate_camera_right(),
-                action_type=ActionType.CAMERA_CONTROL
-            ),
-            Action(
-                name="rotate_camera_left_middle_click",
-                action_fn=lambda: self._rotate_with_middle_click("left"),
-                action_type=ActionType.CAMERA_CONTROL
-            ),
-            Action(
-                name="rotate_camera_right_middle_click",
-                action_fn=lambda: self._rotate_with_middle_click("right"),
-                action_type=ActionType.CAMERA_CONTROL
-            ),
-            Action(
-                name="reset_camera_rotation",
-                action_fn=lambda: self.env.interface.reset_camera_rotation(),
-                action_type=ActionType.CAMERA_CONTROL
-            ),
-            Action(
-                name="tilt_camera_up",
-                action_fn=lambda: self.env.interface.tilt_camera_up(),
-                action_type=ActionType.CAMERA_CONTROL
-            ),
-            Action(
-                name="tilt_camera_down",
-                action_fn=lambda: self.env.interface.tilt_camera_down(),
-                action_type=ActionType.CAMERA_CONTROL
-            ),
-        ])
-        
-        # Add keyboard actions (all keys except restricted ones)
-        alphabet = "abcdefghijklmnopqrstuvwxyz"
-        numbers = "0123456789"
-        special_keys = [
-            'space', 'tab', 'enter', 'backspace', 'delete',
-            'up', 'down', 'left', 'right', 'home', 'end',
-            'pageup', 'pagedown', 'insert', '-', '=', '[', ']',
-            '\\', ';', "'", ',', '.', '/'
-        ]
-        
-        # Add all regular keys
-        for key in alphabet + numbers + ''.join(special_keys):
-            if key != 'esc':  # Skip ESC key
-                actions.append(
-                    Action(
-                        name=f"press_key_{key}",
-                        action_fn=lambda k=key: self.env.interface.press_key(k),
-                        action_type=ActionType.KEYBOARD
-                    )
-                )
-        
-        # Add common modifier combinations (excluding ALT+F4)
-        modifiers = ['shift', 'ctrl']
-        for modifier in modifiers:
-            for key in alphabet + numbers:
-                actions.append(
-                    Action(
-                        name=f"{modifier}_{key}",
-                        action_fn=lambda m=modifier, k=key: self.env.interface.press_hotkey(m, k),
-                        action_type=ActionType.KEYBOARD
-                    )
-                )
-        
-        # Add the actions to the handlers list
-        self.action_handlers.extend(actions)
-        
-        # Set up keyboard actions
-        self._setup_keyboard_actions()
-        
-        # Update action space
-        original_size = self.env.action_space.n
-        self.action_space = gym.spaces.Discrete(len(actions))
-        self.logger.info(f"Extended action space from {original_size} to {len(actions)} actions")
-    
-    def _setup_keyboard_actions(self):
+    def update_decision_memory(self, action_probs):
         """
-        Set up comprehensive keyboard actions for the agent
-        """
-        # Basic alphabet keys
-        alphabet = "abcdefghijklmnopqrstuvwxyz"
-        for char in alphabet:
-            self._add_keyboard_action(char)
-        
-        # Numbers
-        for num in "0123456789":
-            self._add_keyboard_action(num)
-        
-        # Special keys
-        special_keys = [
-            "space", "backspace", "tab", "enter", "return",
-            "up", "down", "left", "right", "home", "end", 
-            "pageup", "pagedown", "delete", "insert"
-        ]
-        for key in special_keys:
-            self._add_keyboard_action(key)
-        
-        # Symbols
-        symbols = [
-            ".", ",", "/", "\\", "[", "]", "=", "-", "'", ";",
-            "`", "~", "!", "@", "#", "$", "%", "^", "&", "*",
-            "(", ")", "_", "+", "{", "}", "|", ":", "\"", "<",
-            ">", "?"
-        ]
-        for symbol in symbols:
-            self._add_keyboard_action(symbol)
-        
-        # Modifier key combinations
-        for char in alphabet:
-            self._add_modifier_action("shift", char)
-            self._add_modifier_action("ctrl", char)
-        
-        for num in "0123456789":
-            self._add_modifier_action("shift", num)
-            self._add_modifier_action("ctrl", num)
-    
-    def _add_keyboard_action(self, key):
-        """
-        Add a keyboard action for a specific key
+        Update the decision memory with new action probabilities.
         
         Args:
-            key: The key to press
+            action_probs: Action probability distribution
         """
-        self.action_handlers.append(
-            Action(
-                name=f"press_key_{key}",
-                action_fn=lambda k=key: self._press_key(k),
-                action_type=ActionType.KEYBOARD
-            )
-        )
-    
-    def _add_modifier_action(self, modifier, key):
-        """
-        Add a keyboard action with a modifier key
-        
-        Args:
-            modifier: Modifier key (shift, ctrl, alt)
-            key: The key to press with the modifier
-        """
-        # Skip ALT+F4 combination
-        if modifier == "alt" and key == "f4":
+        if not self.use_decision_memory:
             return
-            
-        # Skip ESC key
-        if key.lower() == "esc" or key.lower() == "escape":
-            return
-            
-        self.action_handlers.append(
-            Action(
-                name=f"{modifier}_{key}",
-                action_fn=lambda m=modifier, k=key: self._press_modified_key(m, k),
-                action_type=ActionType.KEYBOARD
-            )
-        )
+        
+        # Initialize decision memory if empty
+        if not self.decision_memory:
+            self.decision_memory = [np.zeros(self.action_space.n) for _ in range(self.decision_memory_size)]
+        
+        # Add new action probs and remove oldest
+        self.decision_memory.pop(0)
+        self.decision_memory.append(action_probs)
     
-    def _press_key(self, key):
+    def update_performance_metrics(self, reward, done):
         """
-        Press a keyboard key
+        Update performance metrics based on recent experience.
         
         Args:
-            key: The key to press
-            
-        Returns:
-            True if successful, False otherwise
+            reward: Last received reward
+            done: Whether the episode is done
         """
-        try:
-            # Skip ESC key
-            if key.lower() == "esc" or key.lower() == "escape":
-                return False
-                
-            pyautogui.press(key)
-            self.logger.debug(f"Pressed key: {key}")
-            return True
-        except Exception as e:
-            self.logger.error(f"Error pressing key {key}: {str(e)}")
-            return False
-    
-    def _press_modified_key(self, modifier, key):
-        """
-        Press a key with a modifier
+        # Simple updates for the metrics, in a real system these would be more sophisticated
+        alpha = 0.1  # Learning rate for metrics update
         
-        Args:
-            modifier: Modifier key (shift, ctrl, alt)
-            key: The key to press with the modifier
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            with pyautogui.hold(modifier):
-                pyautogui.press(key)
-            self.logger.debug(f"Pressed {modifier}+{key}")
-            return True
-        except Exception as e:
-            self.logger.error(f"Error pressing {modifier}+{key}: {str(e)}")
-            return False
-    
-    def _get_fallback_observation(self):
-        """Create a minimal valid observation when normal observation fails."""
-        # Get the base environment's observation space structure
-        if isinstance(self.env.observation_space, spaces.Dict):
-            observation = {}
-            for key, space in self.env.observation_space.spaces.items():
-                if key == "visual":
-                    observation[key] = np.zeros(space.shape, dtype=space.dtype)
-                elif key in ["population", "happiness", "budget_balance", "traffic"]:
-                    observation[key] = np.array([0], dtype=space.dtype)  # Default values for metrics
-                else:
-                    observation[key] = np.zeros(space.shape, dtype=space.dtype)
-            return observation
-        elif isinstance(self.env.observation_space, spaces.Box):
-            return np.zeros(self.env.observation_space.shape, dtype=self.env.observation_space.dtype)
+        # Update success rate based on reward
+        if reward > 0:
+            self.performance_metrics["success_rate"] += alpha * (1.0 - self.performance_metrics["success_rate"])
         else:
-            return self.env.observation_space.sample()
-
-    def reset(self, seed=None, options=None):
+            self.performance_metrics["success_rate"] -= alpha * self.performance_metrics["success_rate"]
+        
+        # Bound success rate between 0 and 1
+        self.performance_metrics["success_rate"] = max(0.0, min(1.0, self.performance_metrics["success_rate"]))
+        
+        # Update other metrics (simplified for demonstration)
+        if done and reward > 0:
+            self.performance_metrics["confidence"] += alpha
+            self.performance_metrics["learning_progress"] += alpha * 0.5
+        
+        # Bound all metrics between 0 and 1
+        for key in self.performance_metrics:
+            self.performance_metrics[key] = max(0.0, min(1.0, self.performance_metrics[key]))
+    
+    def get_extended_observation(self, vision_observation):
         """
-        Reset the environment and optionally set the random seed.
+        Create extended observation with additional information.
         
         Args:
-            seed: Optional random seed for reproducibility
-            options: Optional dictionary with additional options
-            
-        Returns:
-            observation: Initial observation
-            info: Additional information
-        """
-        # Set seed if provided
-        if seed is not None:
-            np.random.seed(seed)
-            
-        # Reset exploration counters
-        self.exploration_counter = 0
-        self.menu_exploration_counter = 0
+            vision_observation: Base vision observation
         
-        try:
-            # Reset base environment
-            obs, info = self.env.reset()
+        Returns:
+            Extended observation
+        """
+        if isinstance(self.observation_space, spaces.Dict):
+            # Create the extended observation dictionary
+            obs = {
+                "vision": vision_observation
+            }
             
-            # Reset menu explorer
-            self.menu_explorer.reset()
+            # Add metrics if needed
+            if "metrics" in self.observation_space.spaces:
+                obs["metrics"] = np.array([
+                    self.performance_metrics["success_rate"],
+                    self.performance_metrics["confidence"],
+                    self.performance_metrics["efficiency"],
+                    self.performance_metrics["learning_progress"]
+                ], dtype=np.float32)
             
-            # Ensure we have a valid observation
-            if obs is None:
-                obs = self._get_fallback_observation()
-                info["warning"] = "Using fallback observation"
+            # Add decision memory if needed
+            if "decision_memory" in self.observation_space.spaces and self.use_decision_memory:
+                obs["decision_memory"] = np.array(self.decision_memory, dtype=np.float32)
             
-            # Store as last observation
-            self.last_observation = obs
-            
-            return obs, info
-        except Exception as e:
-            self.logger.error(f"Error in reset: {str(e)}")
-            # Return fallback observation
-            obs = self._get_fallback_observation()
-            return obs, {"error": str(e), "warning": "Using fallback observation"}
+            return obs
+        else:
+            # If no extensions, return the original vision observation
+            return vision_observation
+    
+    def reset(self, **kwargs):
+        """
+        Reset the environment and return initial observation.
+        
+        Returns:
+            Initial observation
+        """
+        vision_observation, info = self.base_env.reset(**kwargs)
+        
+        # Reset decision memory and metrics
+        self.decision_memory = []
+        self.performance_metrics = {k: 0.0 for k in self.performance_metrics}
+        
+        # Return extended observation
+        return self.get_extended_observation(vision_observation), info
     
     def step(self, action):
         """
-        Take a step in the environment with autonomous exploration capabilities.
+        Take a step in the environment.
         
         Args:
-            action: The action to take (index in the action space)
-            
+            action: Action to take
+        
         Returns:
-            observation, reward, terminated, truncated, info - Standard gymnasium step return values
+            observation, reward, terminated, truncated, info
         """
-        self.total_steps += 1
-        self.exploration_counter += 1
+        vision_observation, reward, terminated, truncated, info = self.base_env.step(action)
         
-        try:
-            # Safety check for action index
-            if not isinstance(action, (int, np.integer)) or action < 0 or action >= self.action_space.n:
-                self.logger.warning(f"Invalid action index: {action}")
-                # Replace with a random valid action
-                action = np.random.randint(0, self.action_space.n)
-            
-            # Sometimes override with exploratory actions if we're in exploration mode
-            if np.random.random() < self.exploration_frequency:
-                # Instead of purely random exploration, use guided exploration based on city state
-                action = self._get_guided_exploratory_action()
-            else:
-                # Check if the action is valid given the current state
-                action = self._apply_action_masking(action)
-            
-            # Process the action
-            if 0 <= action < len(self.action_handlers):  # If it's an exploration action and in valid range
-                observation, reward, terminated, truncated, info = self._handle_exploration_action(action)
-            else:
-                # Use base environment for regular actions
-                try:
-                    observation, reward, terminated, truncated, info = self.env.step(action)
-                    self.successful_actions += 1
-                except Exception as e:
-                    self.logger.warning(f"Error executing action {action}: {str(e)}")
-                    self.failed_actions += 1
-                    # Return previous observation with a small penalty
-                    observation = self.last_observation if self.last_observation is not None else self._get_fallback_observation()
-                    reward = -0.1
-                    terminated = False
-                    truncated = False
-                    info = {"error": str(e)}
-            
-            # Ensure we have a valid observation
-            if observation is None:
-                self.logger.warning("Received None observation, using fallback")
-                observation = self._get_fallback_observation()
-                info["warning"] = "Using fallback observation"
-            
-            # Check if observation is iterable (to fix 'NoneType' not iterable error)
-            try:
-                iter(observation)
-            except TypeError:
-                self.logger.warning(f"Non-iterable observation received: {type(observation)}, using fallback")
-                observation = self._get_fallback_observation()
-                info["warning"] = "Using fallback for non-iterable observation"
-            
-            # Store action history for learning patterns
-            if not hasattr(self, 'action_history'):
-                self.action_history = []
-            self.action_history.append((action, reward))
-            if len(self.action_history) > 100:  # Keep last 100 actions
-                self.action_history = self.action_history[-100:]
-            
-            # Update success rate for actions to guide future exploration
-            self._update_action_success_rates(action, reward)
-            
-            # Update last state
-            self.last_observation = observation
-            self.last_reward = reward
-            self.last_done = terminated
-            self.last_info = info
-            
-            # Log progress periodically
-            if self.total_steps % 100 == 0:
-                self.logger.info(f"Total steps: {self.total_steps}, "
-                               f"Successful actions: {self.successful_actions}, "
-                               f"Failed actions: {self.failed_actions}")
-            
-            return observation, reward, terminated, truncated, info
-            
-        except Exception as e:
-            self.logger.error(f"Error in step method: {str(e)}")
-            # Return fallback observation with error info
-            observation = self._get_fallback_observation()
-            return observation, -0.1, False, False, {"error": str(e), "warning": "Using fallback observation"}
+        # Update performance metrics
+        self.update_performance_metrics(reward, terminated)
+        
+        # Update decision memory (in a real system, we'd get action_probs from the agent)
+        action_probs = np.zeros(self.action_space.n)
+        action_probs[action] = 1.0
+        self.update_decision_memory(action_probs)
+        
+        # Add performance metrics to info
+        info["performance_metrics"] = self.performance_metrics.copy()
+        
+        # Return extended observation
+        return self.get_extended_observation(vision_observation), reward, terminated, truncated, info
+        
+    def close(self):
+        """Close the environment."""
+        return self.base_env.close()
+
+class AutonomousCS2Environment(CS2Environment):
+    """
+    Cities: Skylines 2 environment with autonomous capabilities.
+    This class combines CS2Environment with autonomous features.
+    """
     
-    def _apply_action_masking(self, action):
+    def __init__(self, 
+                 base_env_config: Dict[str, Any] = None,
+                 observation_config: Dict[str, Any] = None,
+                 vision_config: Dict[str, Any] = None,
+                 use_fallback_mode: bool = True,
+                 exploration_frequency: float = 0.3,
+                 random_action_frequency: float = 0.2,
+                 menu_exploration_buffer_size: int = 50, 
+                 logger: Optional[logging.Logger] = None):
         """
-        Apply action masking to prevent illogical or impossible actions.
+        Initialize the autonomous CS2 environment.
         
         Args:
-            action: The proposed action
-            
-        Returns:
-            Potentially modified action
+            base_env_config: Configuration for the base environment
+            observation_config: Configuration for observations
+            vision_config: Configuration for vision guidance
+            use_fallback_mode: Whether to use fallback mode if game connection fails
+            exploration_frequency: How often to perform exploratory actions
+            random_action_frequency: How often to perform completely random actions
+            menu_exploration_buffer_size: Size of menu exploration buffer
+            logger: Logger instance
         """
-        # If not a base environment action, no masking needed
-        if action >= self.env.action_space.n:
-            return action
-            
-        # Get current metrics to guide masking
-        if hasattr(self.env, 'interface') and hasattr(self.env.interface, 'get_metrics'):
-            try:
-                metrics = self.env.interface.get_metrics()
-                
-                # Prevent budget actions when budget is healthy
-                if action in range(11, 19) and metrics.get('budget_balance', 0) > 1000:
-                    # Randomly select a more useful action instead
-                    return np.random.randint(0, 11)  # Focus on zoning/infrastructure
-                
-                # Prevent building expensive infrastructure when budget is low
-                if (action in range(5, 11) and metrics.get('budget_balance', 0) < 0 
-                    and np.random.random() < 0.7):  # 70% chance to override
-                    # Use budget-focused actions instead
-                    budget_actions = list(range(11, 19))
-                    return np.random.choice(budget_actions)
-                    
-                # If traffic is high, prioritize roads
-                if metrics.get('traffic', 0) > 70 and action not in [5, 6]:  # Not a road action
-                    if np.random.random() < 0.6:  # 60% chance to override
-                        return 5  # Use road action instead
-            except:
-                pass  # If metrics can't be fetched, don't mask
+        # Initialize the CS2Environment first
+        super().__init__(config=base_env_config or {})
         
-        return action
-    
-    def _update_action_success_rates(self, action, reward):
-        """
-        Update success rates for actions based on rewards received.
+        # Set up autonomous features
+        self.logger = logger or logging.getLogger("AutonomousCS2Environment")
         
-        Args:
-            action: The action taken
-            reward: The reward received
-        """
-        try:
-            # Validate action before proceeding
-            if not isinstance(action, (int, np.integer)) or action < 0 or action >= self.action_space.n:
-                self.logger.warning(f"Invalid action index in _update_action_success_rates: {action}")
-                return
-                
-            if not hasattr(self, 'action_success_rates'):
-                # Initialize success rates for all actions
-                self.action_success_rates = {
-                    i: {'count': 0, 'success': 0, 'success_rate': 0.0, 'avg_reward': 0.0}
-                    for i in range(self.action_space.n)
-                }
-            
-            # Update the count for this action
-            self.action_success_rates[action]['count'] += 1
-            
-            # Update success (positive reward = success)
-            if reward > 0:
-                self.action_success_rates[action]['success'] += 1
-                
-            # Update success rate
-            count = self.action_success_rates[action]['count']
-            success = self.action_success_rates[action]['success']
-            self.action_success_rates[action]['success_rate'] = success / max(1, count)  # Avoid division by zero
-                
-            # Update average reward using running average
-            old_avg = self.action_success_rates[action]['avg_reward']
-            self.action_success_rates[action]['avg_reward'] = old_avg + (reward - old_avg) / count
-        except Exception as e:
-            self.logger.warning(f"Error updating action success rates: {str(e)}")
-    
-    def _get_guided_exploratory_action(self):
-        """Get a guided exploratory action that strategically explores the environment"""
-        # 10% chance for completely random action to maintain some variety (increased from 5%)
-        if np.random.random() < 0.1:
-            return np.random.randint(0, self.action_space.n)
-            
-        # Use different exploration strategies based on probabilities
-        # Increase camera control and keyboard testing probabilities
-        exploration_strategy = np.random.choice([
-            'camera_control',   # Move around the map
-            'ui_exploration',   # Interact with UI elements
-            'game_actions',     # Try game mechanics
-            'keyboard_testing'  # Try keyboard shortcuts
-        ], p=[0.4, 0.2, 0.2, 0.2])  # Changed from [0.3, 0.3, 0.3, 0.1]
+        # Autonomous-specific settings
+        self.exploration_frequency = exploration_frequency
+        self.random_action_frequency = random_action_frequency
+        self.menu_exploration_buffer_size = menu_exploration_buffer_size
         
-        # Get current metrics to guide actions, but don't rely heavily on them
-        metrics = {}
-        population = 0
-        try:
-            observation = self.env.get_observation()
-            if observation is not None:
-                metrics = observation.get('metrics', {}) or {}
-                if metrics is None:
-                    metrics = {}
-                population = metrics.get('population', 0)
-                if population is None:
-                    population = 0
-        except Exception as e:
-            self.logger.debug(f"Error getting metrics in guided exploration: {str(e)}")
-            # Continue without metrics - we don't want to be overly dependent on them
+        # Get configuration
+        self.autonomous_config = self.config.get("autonomous", {})
         
-        if exploration_strategy == 'camera_control':
-            # Prioritize uncovered map areas if we're tracking exploration
-            if hasattr(self.env, 'exploration_grid') and hasattr(self.env, 'current_state') and 'camera_position' in self.env.current_state:
-                # Get actions related to camera movement
-                camera_actions = [i for i, a in enumerate(self.action_handlers) 
-                                if a.action_type == ActionType.CAMERA_CONTROL]
-                
-                # Include rotation actions with higher probability when exploring
-                rotation_actions = [i for i, a in enumerate(self.action_handlers)
-                                  if a.name in ["rotate_camera_left", "rotate_camera_right", 
-                                               "tilt_camera_up", "tilt_camera_down"]]
-                
-                # Combine regular camera movements with some rotation (70/30 split)
-                if np.random.random() < 0.3 and rotation_actions:
-                    return np.random.choice(rotation_actions)
-                else:
-                    return np.random.choice(camera_actions)
-            else:
-                # Fallback to any camera control action
-                camera_actions = [i for i, a in enumerate(self.action_handlers) 
-                                if a.action_type == ActionType.CAMERA_CONTROL]
-                return np.random.choice(camera_actions) if camera_actions else np.random.randint(0, self.action_space.n)
+        self.use_decision_memory = self.autonomous_config.get("use_decision_memory", True)
+        self.decision_memory_size = self.autonomous_config.get("decision_memory_size", 10)
+        self.decision_memory = []
         
-        elif exploration_strategy == 'keyboard_testing':
-            # Try keyboard actions
-            keyboard_actions = [i for i, a in enumerate(self.action_handlers) 
-                              if a.action_type == ActionType.KEYBOARD]
-            
-            # Prioritize common useful keys in city building games
-            priority_keys = [i for i, a in enumerate(self.action_handlers) 
-                            if a.action_type == ActionType.KEYBOARD and
-                            any(key in a.name for key in ['press_key_b', 'press_key_r', 'press_key_p', 
-                                                        'press_key_d', 'press_key_u', 'press_key_1', 
-                                                        'press_key_2', 'press_key_3'])]
-            
-            # 70% chance to use priority keys if available
-            if priority_keys and np.random.random() < 0.7:
-                return np.random.choice(priority_keys)
-            else:
-                return np.random.choice(keyboard_actions) if keyboard_actions else np.random.randint(0, self.action_space.n)
-                
-        elif exploration_strategy == 'ui_exploration':
-            # Try UI interaction actions
-            try:
-                ui_actions = [i for i, a in enumerate(self.action_handlers) 
-                            if a.action_type == ActionType.UI_INTERACTION]
-                
-                # If we have a menu explorer, use it
-                if hasattr(self, 'menu_explorer') and self.menu_explorer is not None:
-                    # Small chance for random UI action
-                    if np.random.random() < 0.2 and ui_actions:
-                        return np.random.choice(ui_actions)
-                    
-                    # Otherwise, use a more directed approach
-                    explore_menu_actions = [i for i, a in enumerate(self.action_handlers) 
-                                         if a.name == "explore_menu"]
-                    
-                    if explore_menu_actions:
-                        return explore_menu_actions[0]  # Use the explore_menu action
-                    else:
-                        return np.random.choice(ui_actions) if ui_actions else np.random.randint(0, self.action_space.n)
-                else:
-                    return np.random.choice(ui_actions) if ui_actions else np.random.randint(0, self.action_space.n)
-            except Exception as e:
-                self.logger.debug(f"Error in UI exploration strategy: {str(e)}")
-                return np.random.randint(0, self.action_space.n)
-                
-        elif exploration_strategy == 'game_actions':
-            # Try game actions (zoning, infrastructure, etc.)
-            try:
-                game_actions = [i for i, a in enumerate(self.action_handlers) 
-                              if a.action_type == ActionType.GAME_ACTION]
-                
-                # If we have available game actions
-                if game_actions:
-                    # Filter to the most successful actions based on our history
-                    if hasattr(self, 'action_success_rates') and self.action_success_rates:
-                        try:
-                            # Filter to game actions that have been tried
-                            success_rates = [(i, self.action_success_rates.get(i, {'success_rate': 0.1, 'avg_reward': 0.0})) 
-                                           for i in game_actions if i in self.action_success_rates]
-                            
-                            if success_rates:
-                                # Sort by success rate * avg_reward
-                                sorted_actions = sorted(success_rates, 
-                                                     key=lambda x: x[1]['success_rate'] * max(0.1, x[1]['avg_reward']), 
-                                                     reverse=True)
-                                
-                                # Take the top 30% of actions
-                                top_actions = [a[0] for a in sorted_actions[:max(1, len(sorted_actions) // 3)]]
-                                return np.random.choice(top_actions)
-                        except Exception as rate_error:
-                            self.logger.debug(f"Error filtering by success rates: {str(rate_error)}")
-                            # Fall back to random game action
-                    
-                    # Default: random game action
-                    return np.random.choice(game_actions)
-                else:
-                    # No game actions available, fall back to random
-                    return np.random.randint(0, self.action_space.n)
-            except Exception as e:
-                self.logger.debug(f"Error in game actions strategy: {str(e)}")
-                return np.random.randint(0, self.action_space.n)
-        
-        # Default: return a random action if no strategy matched
-        return np.random.randint(0, self.action_space.n)
-    
-    def _handle_exploration_action(self, action):
-        """
-        Handle exploration-specific actions.
-        
-        Args:
-            action: The exploration action to take
-            
-        Returns:
-            observation, reward, terminated, truncated, info - Standard gymnasium step return values
-        """
-        self.menu_exploration_counter += 1
-        
-        # Get current screenshot for exploration
-        screenshot = None
-        try:
-            screenshot = self.env.interface.capture_screen()
-        except Exception as e:
-            self.logger.warning(f"Failed to capture screen: {str(e)}")
-        
-        # Default return values (will be overridden if action succeeds)
-        observation = self.last_observation if self.last_observation is not None else self.reset()[0]
-        reward = 0  # Neutral reward by default for exploration
-        terminated = False
-        truncated = False
-        info = {}
-        
-        try:
-            # Check if action index is valid
-            if action < 0 or action >= len(self.action_handlers):
-                self.logger.warning(f"Invalid exploration action index: {action}")
-                return observation, -0.1, terminated, truncated, {"error": "Invalid action index"}
-            
-            # Get action handler details
-            action_handler = self.action_handlers[action]
-            action_name = action_handler.name
-            action_type = action_handler.action_type
-            
-            # Add action details to info
-            info["exploration_action"] = action_name
-            
-            # Execute the action using its action_fn
-            try:
-                success = action_handler.action_fn()
-            except Exception as action_error:
-                self.logger.warning(f"Error executing action {action_name}: {str(action_error)}")
-                success = False
-                info["error"] = str(action_error)
-            
-            # Update info based on action type
-            if action_type == ActionType.CAMERA_CONTROL:
-                info["camera_action"] = action_name
-                reward = 0.03  # Increased reward for camera control (was 0.01)
-            elif action_type == ActionType.UI_INTERACTION:
-                info["ui_action"] = action_name
-                reward = 0.02  # Small base reward for UI interaction
-                # Menu exploration already gives additional rewards in the function
-            elif action_type == ActionType.KEYBOARD:
-                info["keyboard_action"] = action_name
-                reward = 0.02  # Added reward for keyboard actions
-            elif action_type == ActionType.GAME_ACTION:
-                info["game_action"] = action_name
-                reward = 0.02  # Base reward for attempting game actions
-            
-            # Special actions that need additional handling
-            if action_name == "explore_menu" and success:
-                # Menu explorer might need additional processing beyond what's in action_fn
-                if screenshot is not None and hasattr(self.menu_explorer, 'explore_screen'):
-                    try:
-                        exploration_result = self.menu_explorer.explore_screen(screenshot)
-                        
-                        if isinstance(exploration_result, dict) and "action" in exploration_result:
-                            if exploration_result["action"] in ["click_menu", "click_submenu", "click_discovered"]:
-                                # Add to discovery buffer if it's a new element
-                                self._update_discovery_buffer(exploration_result)
-                                
-                                # Increased positive reward for discovering new elements
-                                reward = 0.1  # Was 0.05
-                                
-                                element_name = exploration_result.get("menu_name", 
-                                                              exploration_result.get("element_name", "unknown"))
-                                if element_name:
-                                    info["exploration_element"] = element_name
-                    except Exception as explore_error:
-                        self.logger.warning(f"Menu exploration error: {str(explore_error)}")
-                        info["menu_error"] = str(explore_error)
-            
-            # Wait a short time to let the game react - reduced slightly to increase exploration speed
-            time.sleep(0.025)  # Was 0.05
-            
-            # Get new observation after action
-            try:
-                new_observation = self.env.get_observation()
-                if new_observation is not None:
-                    observation = new_observation
-            except Exception as obs_error:
-                self.logger.warning(f"Failed to get observation: {str(obs_error)}")
-            
-            # Reward meaningful observation changes - with robust None checks
-            if self.last_observation is not None and observation is not None:
-                # Check if the observation changed meaningfully
-                try:
-                    if isinstance(observation, dict) and isinstance(self.last_observation, dict):
-                        # For dictionary observations from multi-modal environments
-                        if ("metrics" in observation and 
-                            "metrics" in self.last_observation and
-                            observation["metrics"] is not None and
-                            self.last_observation["metrics"] is not None):
-                            
-                            # Make sure we can safely compare the metrics (they should be numpy arrays)
-                            if (isinstance(observation["metrics"], np.ndarray) and 
-                                isinstance(self.last_observation["metrics"], np.ndarray) and
-                                observation["metrics"].shape == self.last_observation["metrics"].shape):
-                                try:
-                                    metrics_diff = np.sum(np.abs(observation["metrics"] - self.last_observation["metrics"]))
-                                    if metrics_diff > 0.1:  # If metrics changed significantly
-                                        reward += 0.03  # Small bonus for causing observable changes
-                                except Exception as metrics_error:
-                                    self.logger.debug(f"Error comparing metrics: {str(metrics_error)}")
-                            
-                        # Check for individual metrics as well
-                        for metric in ["population", "happiness", "budget_balance", "traffic"]:
-                            try:
-                                if (metric in observation and 
-                                    metric in self.last_observation and
-                                    observation[metric] is not None and 
-                                    self.last_observation[metric] is not None):
-                                    
-                                    # Ensure we're dealing with numpy arrays of compatible shape
-                                    obs_metric = observation[metric]
-                                    last_metric = self.last_observation[metric]
-                                    
-                                    # Convert to numpy arrays if they aren't already
-                                    if not isinstance(obs_metric, np.ndarray):
-                                        obs_metric = np.array(obs_metric)
-                                    if not isinstance(last_metric, np.ndarray):
-                                        last_metric = np.array(last_metric)
-                                    
-                                    # Make sure shapes match before comparison
-                                    if obs_metric.shape == last_metric.shape:
-                                        metric_diff = np.abs(obs_metric - last_metric).mean()
-                                        if metric_diff > 0.1:
-                                            reward += 0.01  # Smaller bonus for individual metric changes
-                                            self.logger.debug(f"Metric {metric} changed: {metric_diff}")
-                            except Exception as metric_error:
-                                self.logger.debug(f"Error comparing metric {metric}: {str(metric_error)}")
-                                continue  # Skip this metric but continue with others
-                    elif isinstance(observation, np.ndarray) and isinstance(self.last_observation, np.ndarray):
-                        # For image or vector observations
-                        # Check dimensions and dtype match before comparison
-                        try:
-                            if (observation.shape == self.last_observation.shape and 
-                                observation.dtype == self.last_observation.dtype):
-                                obs_diff = np.mean(np.abs(observation - self.last_observation))
-                                if obs_diff > 0.1:  # If observation changed significantly
-                                    reward += 0.02
-                        except Exception as array_error:
-                            self.logger.debug(f"Error comparing array observations: {str(array_error)}")
-                except Exception as compare_error:
-                    self.logger.debug(f"Error comparing observations: {str(compare_error)}")
-                    # Log additional details to help diagnose issues
-                    if isinstance(observation, dict) and isinstance(self.last_observation, dict):
-                        for key in set(observation.keys()).union(set(self.last_observation.keys())):
-                            obs_val = observation.get(key)
-                            last_val = self.last_observation.get(key)
-                            self.logger.debug(f"Key: {key}, Current: {type(obs_val)}, Last: {type(last_val)}")
-        
-        except Exception as e:
-            self.logger.error(f"Error in exploration action handling: {str(e)}")
-            import traceback
-            self.logger.debug(f"Traceback: {traceback.format_exc()}")
-            info["error"] = str(e)
-            reward = -0.1  # Penalty for errors
-        
-        return observation, reward, terminated, truncated, info
-    
-    def _update_discovery_buffer(self, exploration_result):
-        """
-        Update the buffer of discovered menu elements.
-        
-        Args:
-            exploration_result: Result from menu exploration
-        """
-        # Safety check for invalid result types
-        if exploration_result is None:
-            self.logger.warning("Cannot update discovery buffer with None result")
-            return
-            
-        # Handle case where result is a boolean
-        if isinstance(exploration_result, bool):
-            self.logger.debug(f"Exploration result was boolean: {exploration_result}")
-            return
-            
-        # Ensure result is a dictionary
-        if not isinstance(exploration_result, dict):
-            self.logger.warning(f"Cannot update discovery buffer with non-dict result: {type(exploration_result)}")
-            return
-            
-        # Ensure required keys are present
-        if "position" not in exploration_result:
-            self.logger.warning("Exploration result missing required position key")
-            return
-            
-        # Create a discovery record
-        discovery = {
-            "name": exploration_result.get("menu_name", 
-                                         exploration_result.get("element_name", "unknown")),
-            "position": exploration_result["position"],
-            "confidence": exploration_result.get("confidence", 0.5),  # Default confidence if not provided
-            "discovered_at": self.total_steps
+        # Advanced metrics tracking
+        self.performance_metrics = {
+            "success_rate": 0.0,
+            "confidence": 0.0,
+            "efficiency": 0.0,
+            "learning_progress": 0.0
         }
         
-        # Check if this element is already in the buffer
-        for i, item in enumerate(self.menu_discovery_buffer):
-            if self.menu_explorer._positions_close(item["position"], discovery["position"]):
-                # Update existing entry
-                self.menu_discovery_buffer[i] = discovery
-                return
+        # Extend observation space to include higher-level information
+        self.extend_observation_space()
         
-        # Add new discovery to buffer
-        self.menu_discovery_buffer.append(discovery)
-        
-        # Trim buffer if it exceeds the maximum size
-        if len(self.menu_discovery_buffer) > self.menu_exploration_buffer_size:
-            # Remove oldest entries
-            self.menu_discovery_buffer = sorted(
-                self.menu_discovery_buffer, 
-                key=lambda x: x["discovered_at"], 
-                reverse=True
-            )[:self.menu_exploration_buffer_size]
+        self.logger.info("Autonomous environment initialized")
     
-    def _has_observation_changed(self, new_observation):
+    def extend_observation_space(self):
+        """Extend the observation space to include higher-level information."""
+        # Preserve the original observation space
+        self.vision_observation_space = self.observation_space
+        
+        # Get additional observation components
+        additional_spaces = {}
+        
+        # Add metrics to observation if enabled
+        if self.autonomous_config.get("observe_metrics", True):
+            additional_spaces["metrics"] = spaces.Box(
+                low=0.0, 
+                high=1.0, 
+                shape=(4,),  # success_rate, confidence, efficiency, learning_progress
+                dtype=np.float32
+            )
+        
+        # Add decision memory to observation if enabled
+        if self.use_decision_memory:
+            additional_spaces["decision_memory"] = spaces.Box(
+                low=-np.inf,
+                high=np.inf,
+                shape=(self.decision_memory_size, 5),  # action, reward, success, confidence, time
+                dtype=np.float32
+            )
+        
+        # Create the extended observation space
+        self.observation_space = spaces.Dict({
+            **self.observation_space.spaces,
+            **additional_spaces
+        })
+    
+    def update_decision_memory(self, action_probs):
         """
-        Check if the observation has changed significantly.
+        Update the decision memory with new action probabilities.
         
         Args:
-            new_observation: The new observation to compare
-            
-        Returns:
-            True if observation has changed significantly
+            action_probs: Action probability distribution
         """
-        if self.last_observation is None or new_observation is None:
-            return True
+        if not self.use_decision_memory:
+            return
         
-        try:
-            # For image observations, check if pixels have changed
-            if isinstance(new_observation, np.ndarray) and new_observation.ndim >= 3:
-                # Check if a significant number of pixels have changed
-                if isinstance(self.last_observation, np.ndarray) and self.last_observation.shape == new_observation.shape:
-                    diff = np.abs(new_observation - self.last_observation).mean()
-                    return diff > 0.05  # Threshold for significant change
-            
-            # For dictionary observations, check components
-            elif isinstance(new_observation, dict) and isinstance(self.last_observation, dict):
-                # Check if visual component has changed
-                if ('visual' in new_observation and 'visual' in self.last_observation and
-                    new_observation['visual'] is not None and self.last_observation['visual'] is not None):
-                    
-                    visual_new = new_observation['visual']
-                    visual_last = self.last_observation['visual']
-                    
-                    if (isinstance(visual_new, np.ndarray) and isinstance(visual_last, np.ndarray) and 
-                        visual_new.shape == visual_last.shape):
-                        visual_diff = np.abs(visual_new - visual_last).mean()
-                        if visual_diff > 0.05:
-                            return True
-                
-                # Check if metrics have changed
-                for key in new_observation:
-                    if key == 'visual':
-                        continue
-                    
-                    if (key in self.last_observation and 
-                        new_observation[key] is not None and 
-                        self.last_observation[key] is not None):
-                        
-                        if isinstance(new_observation[key], (int, float)) and isinstance(self.last_observation[key], (int, float)):
-                            if abs(new_observation[key] - self.last_observation[key]) > 0.01:
-                                return True
-                        elif isinstance(new_observation[key], np.ndarray) and isinstance(self.last_observation[key], np.ndarray):
-                            if new_observation[key].shape == self.last_observation[key].shape:
-                                diff = np.abs(new_observation[key] - self.last_observation[key]).mean()
-                                if diff > 0.01:
-                                    return True
-        except Exception as e:
-            self.logger.debug(f"Error in _has_observation_changed: {str(e)}")
-            return True  # Assume change on error to be safe
+        # Initialize decision memory if empty
+        if not self.decision_memory:
+            self.decision_memory = [np.zeros(self.action_space.n) for _ in range(self.decision_memory_size)]
         
-        return False 
-
-    def _explore_menu(self):
-        """
-        Explore the game menus by clicking on menu items.
-        
-        Returns:
-            True if exploration was successful, False otherwise
-        """
-        # Use menu explorer to find and click on a menu item
-        try:
-            # Check if menu explorer is available
-            if not hasattr(self, 'menu_explorer') or self.menu_explorer is None:
-                self.logger.warning("No menu explorer available")
-                return False
-                
-            # Check if the explore_random_menu method exists
-            if not hasattr(self.menu_explorer, 'explore_random_menu'):
-                self.logger.warning("menu_explorer doesn't have explore_random_menu method")
-                return False
-                
-            # Call the explore_random_menu method
-            result = self.menu_explorer.explore_random_menu()
-            
-            # Check if result is valid
-            if result is None:
-                self.logger.warning("Menu exploration returned None")
-                return False
-                
-            # Make sure result is a dictionary
-            if not isinstance(result, dict):
-                self.logger.warning(f"Menu exploration returned non-dict: {type(result)}")
-                return False
-                
-            # Update discovery buffer with the result (safely)
-            try:
-                self._update_discovery_buffer(result)
-            except Exception as buffer_error:
-                self.logger.warning(f"Error updating discovery buffer: {buffer_error}")
-                # Continue execution - this is not a critical error
-                
-            # Get the success flag from the result
-            return result.get('success', False)
-            
-        except Exception as e:
-            self.logger.warning(f"Error in _explore_menu: {str(e)}")
-            return False
+        # Add new action probs and remove oldest
+        self.decision_memory.pop(0)
+        self.decision_memory.append(action_probs)
     
-    def _explore_ui(self):
+    def update_performance_metrics(self, reward, done):
         """
-        Explore the game UI by clicking on UI elements.
+        Update performance metrics based on recent experience.
         
-        Returns:
-            True if exploration was successful, False otherwise
+        Args:
+            reward: Last received reward
+            done: Whether the episode is done
         """
-        # Get screen dimensions
-        screen_region = self.env.interface.screen_region
-        width, height = screen_region[2], screen_region[3]
+        # Simple updates for the metrics, in a real system these would be more sophisticated
+        alpha = 0.1  # Learning rate for metrics update
         
-        # Generate random coordinates within the screen region
-        x = np.random.randint(0, width)
-        y = np.random.randint(0, height)
-        
-        # Click at the random coordinates
-        success = self.env.interface.click_at_coordinates(x, y)
-        
-        return success
-    
-    def _take_random_base_action(self):
-        """
-        Take a random action from the base environment's action space.
-        
-        Returns:
-            True if the action was successful, False otherwise
-        """
-        try:
-            # Verify the base environment's action space exists
-            if not hasattr(self.env, 'action_space') or self.env.action_space is None:
-                self.logger.error("Base environment action space is not accessible")
-                return False
-                
-            # Get the size of the action space safely
-            action_space_size = getattr(self.env.action_space, 'n', 0)
-            if action_space_size <= 0:
-                self.logger.error("Invalid action space size")
-                return False
-            
-            # Choose a random action from the base environment
-            random_action = np.random.randint(0, action_space_size)
-            
-            # Perform the action using the base environment's step method
-            try:
-                observation, reward, terminated, truncated, info = self.env.step(random_action)
-                
-                # Track the observation and reward (with safety checks)
-                if observation is not None:
-                    self.last_observation = observation
-                if isinstance(reward, (int, float)):
-                    self.last_reward = reward
-                self.last_done = bool(terminated or truncated)
-                if isinstance(info, dict):
-                    self.last_info = info
-                
-                return True
-            except Exception as e:
-                self.logger.error(f"Error taking random base action {random_action}: {e}")
-                return False
-        except Exception as outer_e:
-            self.logger.error(f"Exception in random base action selection: {outer_e}")
-            return False
-    
-    def _repeat_last_action(self):
-        """
-        Repeat the last action that was taken.
-        
-        Returns:
-            True if the action was repeated successfully, False otherwise
-        """
-        if hasattr(self, 'last_action'):
-            try:
-                observation, reward, terminated, truncated, info = self.step(self.last_action)
-                return True
-            except Exception as e:
-                self.logger.error(f"Error repeating last action: {e}")
-                return False
+        # Update success rate based on reward
+        if reward > 0:
+            self.performance_metrics["success_rate"] += alpha * (1.0 - self.performance_metrics["success_rate"])
         else:
-            self.logger.warning("No last action to repeat")
-            return False
+            self.performance_metrics["success_rate"] -= alpha * self.performance_metrics["success_rate"]
+        
+        # Bound success rate between 0 and 1
+        self.performance_metrics["success_rate"] = max(0.0, min(1.0, self.performance_metrics["success_rate"]))
+        
+        # Update other metrics (simplified for demonstration)
+        if done and reward > 0:
+            self.performance_metrics["confidence"] += alpha
+            self.performance_metrics["learning_progress"] += alpha * 0.5
+        
+        # Bound all metrics between 0 and 1
+        for key in self.performance_metrics:
+            self.performance_metrics[key] = max(0.0, min(1.0, self.performance_metrics[key]))
     
-    # Helper method for middle-click camera rotation
-    def _rotate_with_middle_click(self, direction):
+    def get_extended_observation(self, vision_observation):
         """
-        Rotate camera by holding middle mouse button and moving in specified direction.
-        More natural camera control than using keyboard.
+        Create extended observation with additional information.
         
         Args:
-            direction: Which direction to rotate ("left" or "right")
-            
+            vision_observation: Base vision observation
+        
         Returns:
-            True if action was successful
+            Extended observation
         """
-        try:
-            # Get screen center
-            screen_width, screen_height = pyautogui.size()
-            center_x, center_y = screen_width // 2, screen_height // 2
+        if isinstance(self.observation_space, spaces.Dict):
+            # Create the extended observation dictionary
+            obs = {
+                "vision": vision_observation
+            }
             
-            # Calculate drag distance based on direction
-            drag_distance = 100
-            if direction == "left":
-                end_x = center_x - drag_distance
-                end_y = center_y
-            elif direction == "right":
-                end_x = center_x + drag_distance
-                end_y = center_y
-            else:
-                return False
-                
-            # Middle click and hold, then drag
-            pyautogui.moveTo(center_x, center_y)
-            pyautogui.mouseDown(button='middle')
-            pyautogui.moveTo(end_x, end_y, duration=0.2)
-            pyautogui.mouseUp(button='middle')
+            # Add metrics if needed
+            if "metrics" in self.observation_space.spaces:
+                obs["metrics"] = np.array([
+                    self.performance_metrics["success_rate"],
+                    self.performance_metrics["confidence"],
+                    self.performance_metrics["efficiency"],
+                    self.performance_metrics["learning_progress"]
+                ], dtype=np.float32)
             
-            return True
-        except Exception as e:
-            self.logger.warning(f"Failed to rotate with middle click: {str(e)}")
-            return False 
+            # Add decision memory if needed
+            if "decision_memory" in self.observation_space.spaces and self.use_decision_memory:
+                obs["decision_memory"] = np.array(self.decision_memory, dtype=np.float32)
+            
+            return obs
+        else:
+            # If no extensions, return the original vision observation
+            return vision_observation
+    
+    def reset(self, **kwargs):
+        """
+        Reset the environment and return initial observation.
+        
+        Returns:
+            Initial observation
+        """
+        vision_observation, info = self.base_env.reset(**kwargs)
+        
+        # Reset decision memory and metrics
+        self.decision_memory = []
+        self.performance_metrics = {k: 0.0 for k in self.performance_metrics}
+        
+        # Return extended observation
+        return self.get_extended_observation(vision_observation), info
+    
+    def step(self, action):
+        """
+        Take a step in the environment.
+        
+        Args:
+            action: Action to take
+        
+        Returns:
+            observation, reward, terminated, truncated, info
+        """
+        vision_observation, reward, terminated, truncated, info = self.base_env.step(action)
+        
+        # Update performance metrics
+        self.update_performance_metrics(reward, terminated)
+        
+        # Update decision memory (in a real system, we'd get action_probs from the agent)
+        action_probs = np.zeros(self.action_space.n)
+        action_probs[action] = 1.0
+        self.update_decision_memory(action_probs)
+        
+        # Add performance metrics to info
+        info["performance_metrics"] = self.performance_metrics.copy()
+        
+        # Return extended observation
+        return self.get_extended_observation(vision_observation), reward, terminated, truncated, info
+        
+    def close(self):
+        """Close the environment."""
+        return self.base_env.close()
+
+# Create an alias for backward compatibility
+AutonomousCS2Environment = AutonomousCS2Environment
+
+# Define any missing types that might be imported from this module
+class ActionType:
+    """Type of action for the autonomous environment."""
+    MENU = "menu"
+    BUTTON = "button"
+    KEYBOARD = "keyboard"
+    MOUSE = "mouse"
+    COMBINED = "combined"
+    GAME_ACTION = "game_action"
+
+class Action:
+    """Action representation for the autonomous environment."""
+    def __init__(self, action_type=None, value=None, name=None, description=None, action_fn=None):
+        self.type = action_type
+        self.value = value
+        self.name = name or (f"{action_type}_{value}" if value is not None else action_type)
+        self.description = description or (f"{action_type} action with value {value}" if value is not None else f"{action_type} action")
+        self.action_fn = action_fn  # Add support for action_fn parameter

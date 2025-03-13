@@ -6,25 +6,57 @@ This repository contains code for training a reinforcement learning agent to pla
 
 - Windows 10/11
 - Cities: Skylines 2 installed
-- Python 3.9+ with venv
+- Anaconda or Miniconda
 - [Ollama](https://ollama.ai/) installed and running
 
-## Setup
+## Quick Start
+
+For the fastest way to get started, run the all-in-one setup and training batch file:
+
+```bash
+all_in_one_setup_and_train.bat
+```
+
+This script will:
+1. Check for Anaconda and set up the environment
+2. Install all required packages
+3. Configure GPU support if available
+4. Set up Ollama and the vision model
+5. Run all necessary tests
+6. Start the training process
+
+You can customize the training with command-line parameters:
+```bash
+all_in_one_setup_and_train.bat [timesteps] [mode] [focus]
+```
+
+For more information about options:
+```bash
+all_in_one_setup_and_train.bat help
+```
+
+## Manual Setup
+
+If you prefer to set up manually:
 
 1. Clone this repository
-2. Create and activate a virtual environment:
+2. Create and activate the Anaconda environment:
    ```bash
-   python -m venv venv
-   venv\Scripts\activate
+   setup_conda.bat
    ```
-3. Install dependencies:
+   This will create a conda environment named 'cs2_agent' with all required packages.
+
+3. If needed, activate the environment manually:
    ```bash
-   pip install -r requirements.txt
+   conda activate cs2_agent
    ```
+
 4. Run the Ollama setup script to ensure the vision model is installed:
    ```bash
    setup_ollama.bat
    ```
+
+For more details on the Anaconda setup, see [ANACONDA_SETUP.md](ANACONDA_SETUP.md).
 
 ## Usage
 
@@ -65,6 +97,11 @@ The agent's behavior is controlled by configuration files in the `config` direct
 - **Vision Model Issues**: If the vision model isn't working correctly, try reinstalling it manually:
   ```bash
   ollama pull granite3.2-vision:latest
+  ```
+
+- **GPU Not Detected**: If your GPU isn't being detected, run:
+  ```bash
+  check_gpu.bat
   ```
 
 ## Project Structure

@@ -135,6 +135,9 @@ class VisionGuidedCS2Environment(AutonomousCS2Environment):
             "vision_action_success_rate": {}
         }
         
+        # Initialize action handlers list
+        self.action_handlers = []
+        
         # Add vision-guided actions
         self._add_vision_guided_actions()
         

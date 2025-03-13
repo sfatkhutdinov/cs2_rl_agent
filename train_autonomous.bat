@@ -18,7 +18,7 @@ echo.
 pause
 
 echo Setting up Python environment...
-call venv\Scripts\activate.bat
+call conda activate cs2_agent
 
 echo Creating necessary directories...
 if not exist experiments mkdir experiments
