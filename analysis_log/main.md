@@ -407,6 +407,7 @@ For a complete overview of all findings and strategic recommendations, see:
 - [Document Tagging System](document_tags.md) - Tag-based categorization for flexible filtering and discovery
 - [Component Relationship Visualization](visualization/component_relationships.md) - Visual maps of system components and their relationships
 - [Link Checker](tools/link_checker_docs.md) - Tool for validating document links and maintaining navigation integrity
+- [Batch Scripts Reference](tools/batch_scripts_reference.md) - Comprehensive guide to batch scripts and their usage
 - [Cursor Project Rules](../cursor_project_rules.md) - Project-specific guidelines for maintaining consistent documentation
 
 ## Completed Analyses
