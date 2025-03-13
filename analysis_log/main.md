@@ -2,7 +2,12 @@
 
 <!-- 
 META PROMPT FOR DOCUMENTATION WORK:
-1. ALWAYS check current date format: Use March 13, 2025 16:36 format for consistency
+1. ALWAYS check current date format: 
+   - Use the ACTUAL CURRENT DATE in format: Month Day, Year HH:MM (e.g., March 13, 2025 16:36)
+   - NEVER use example dates like the ones shown above
+   - Use run_terminal_cmd to get the current date if needed (e.g., `date` or `Get-Date`)
+   - For Windows: run_terminal_cmd with `Get-Date -Format "MMMM d, yyyy HH:mm"`
+   - For Unix/Linux: run_terminal_cmd with `date "+%B %d, %Y %H:%M"`
 
 2. ALWAYS check existing directory structure before creating new files:
    - Use list_dir to verify directory structure
@@ -24,9 +29,13 @@ META PROMPT FOR DOCUMENTATION WORK:
    - Use consistent formatting and heading structure
 
 5. ALWAYS maintain proper document metadata:
-   - Include last updated dates in the correct format
+   - Include last updated dates in the correct format (Month Day, Year HH:MM)
+   - ALWAYS get the ACTUAL CURRENT DATE using run_terminal_cmd when updating dates
+   - IMMEDIATELY update the last updated date whenever ANY changes are made to a file
+   - Document the nature of the update in the date line (e.g., "Last updated: <ACTUAL_CURRENT_DATE> - Added performance analysis section")
    - Use appropriate tags from document_tags.md
    - Follow file naming conventions
+   - Verify the "Last updated" date appears at the top of each document, directly after frontmatter if present
 
 6. DOCUMENT & LOG ACTIONS EFFICIENTLY:
    - Begin each session with a quick scan of main.md and related files
@@ -321,6 +330,13 @@ META PROMPT FOR DOCUMENTATION WORK:
       ```
 
 26. IMPLEMENT GIT-BASED CHANGE TRACKING:
+    - MANDATORY: ALWAYS use run_terminal_cmd to execute git commands after making file changes
+    - NEVER skip git operations after file modifications
+    - After ANY file modification, execute these steps IN ORDER:
+      1. `git status` to verify changes
+      2. `git diff [modified-file]` to review changes
+      3. `git add [modified-file]` to stage changes
+      4. `git commit -m "descriptive message"` to commit changes
     - Use git commands for robust version control of all changes
     - For each significant change or logical group of changes:
       * Create atomic commits with descriptive messages
@@ -346,9 +362,26 @@ META PROMPT FOR DOCUMENTATION WORK:
       * `git log --oneline -n 5` - Review recent commit history
       * `git checkout -b [branch-name]` - Create new branch if needed
       
+27. ENFORCE MANDATORY VERIFICATION PROCEDURES:
+    - VERIFICATION CHECKLIST FOR EVERY RESPONSE:
+      * ✓ ACTUAL CURRENT DATE was obtained via terminal command
+      * ✓ "Last updated" date was updated with ACTUAL date
+      * ✓ Git operations were performed after file changes
+      * ✓ Changes were committed with descriptive message
+    - Add the following to EVERY response after making file changes:
+      ```
+      ### 🔐 MANDATORY VERIFICATION
+      - Current date obtained: [Yes/No - command used]
+      - Last updated dates updated: [Yes/No - files updated]
+      - Git operations performed: [Yes/No - commands executed]
+      - All changes committed: [Yes/No - commit message]
+      ```
+    - If ANY of these verification items are "No", IMMEDIATELY perform the missing steps
+    - Document the verification process and include terminal command output
+
 -->
 
-*Last updated: March 13, 2025 - Fixed inconsistency with autonomous environment listing*
+*Last updated: March 13, 2025 14:12 - Enhanced meta prompt to enforce updating the last updated date*
 
 ## Overview
 This directory contains a comprehensive analysis of the CS2 reinforcement learning agent codebase, organized by component type. This main file serves as an index to navigate the detailed analyses in subdirectories.
