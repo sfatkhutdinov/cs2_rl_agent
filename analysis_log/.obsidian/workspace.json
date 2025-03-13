@@ -1,0 +1,180 @@
+{
+  "main": {
+    "id": "4c84f0db157dd21f",
+    "type": "split",
+    "children": [
+      {
+        "id": "10e38b5937efc220",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "b3dbd3cf1b863127",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "performance/parallel_processing.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "parallel_processing"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "d299275de0da29ab",
+    "type": "split",
+    "children": [
+      {
+        "id": "47c660fb892e9912",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "7a1ee16d80a32bf4",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "8848b818310c773b",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "29f1545ae6060784",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "192c451d85ead219",
+    "type": "split",
+    "children": [
+      {
+        "id": "514974da20a4d653",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "b61b5ecd23653c63",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "performance/parallel_processing.md",
+                "collapseAll": true,
+                "extraContext": true,
+                "sortOrder": "alphabetical",
+                "showSearch": true,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks for parallel_processing"
+            }
+          },
+          {
+            "id": "37ffa366a34c8424",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "performance/parallel_processing.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links from parallel_processing"
+            }
+          },
+          {
+            "id": "e49c8f348050e1d9",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "98285dc19b9f6004",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "performance/parallel_processing.md",
+                "followCursor": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline of parallel_processing"
+            }
+          }
+        ],
+        "currentTab": 3
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false
+    }
+  },
+  "active": "b3dbd3cf1b863127",
+  "lastOpenFiles": [
+    "parallel_processing.md",
+    "performance/parallel_processing.md",
+    "original_codebase_analysis_log.md",
+    "performance/api_bottleneck.md",
+    "components/autonomous_vision.md",
+    "main.md"
+  ]
+}
