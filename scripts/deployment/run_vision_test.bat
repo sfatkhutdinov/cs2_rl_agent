@@ -1,15 +1,13 @@
 @echo off
-echo Running Cities: Skylines 2 RL Agent Vision Interface Test
-echo.
-echo Ensure Cities: Skylines 2 is running and a city is loaded!
-echo.
+REM This script runs the vision test to verify that the vision system works correctly
+REM It will take screenshots and show them with detected elements
 
-REM Navigate to the project root directory
-cd /d "%~dp0"
+REM Set the path to the CS2 RL agent directory
+set BASE_DIR=%~dp0..\..
+cd %BASE_DIR%
 
-REM Run the test script
-python src\test_vision_windows.py
+echo Running vision test...
+python testing\test_vision_windows.py
 
-echo.
-echo Test completed. Press any key to exit.
-pause > nul 
+echo Done.
+pause 

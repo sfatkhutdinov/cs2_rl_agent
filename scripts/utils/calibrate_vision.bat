@@ -1,16 +1,13 @@
 @echo off
-echo Cities: Skylines 2 RL Agent - Vision Interface Calibration
-echo.
-echo This tool will help you calibrate the vision interface for your screen.
-echo Ensure Cities: Skylines 2 is running and a city is loaded!
-echo.
+REM This script runs the vision calibration tool
+REM It will help you set up the correct window detection parameters
 
-REM Navigate to the project root directory
-cd /d "%~dp0"
+REM Set the path to the CS2 RL agent directory
+set BASE_DIR=%~dp0..\..
+cd %BASE_DIR%
 
-REM Run the calibration mode
-python src\test_vision_windows.py --calibrate
+echo Running vision calibration tool...
+python testing\test_vision_windows.py --calibrate
 
-echo.
-echo Calibration completed. Press any key to exit.
-pause > nul 
+echo Done.
+pause 

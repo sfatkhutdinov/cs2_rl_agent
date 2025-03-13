@@ -390,6 +390,9 @@ For a complete overview of all findings and strategic recommendations, see:
 - [Autonomous Training](training/autonomous_training.md) - Analysis of the autonomous training script implementation
 - [Training Scripts Overview](training/training_scripts_overview.md) - Comparison of different training approaches
 
+### Evaluation System
+- [Evaluation System Overview](evaluation/evaluation_overview.md) - Documentation of the evaluation system and methodology
+
 ### Testing and Deployment
 - [Testing Infrastructure](testing/testing_infrastructure.md) - Comprehensive testing documentation
 - [Testing Infrastructure Summary](testing/testing_infrastructure_summary.md) - Executive summary of testing approach

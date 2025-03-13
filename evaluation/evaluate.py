@@ -10,10 +10,10 @@ from datetime import datetime
 import gymnasium as gym
 from stable_baselines3 import PPO, DQN, A2C
 
-from environment.cs2_env import CS2Environment
-from agent.agent_factory import wrap_env_if_needed
-from utils.config_utils import load_config, get_full_path
-from utils.logger import Logger
+from src.environment.cs2_env import CS2Environment
+from src.agent.agent_factory import wrap_env_if_needed
+from src.utils.config_utils import load_config, get_full_path
+from src.utils.logger import Logger
 
 
 def parse_args():

@@ -17,12 +17,18 @@ cs2_rl_agent/
 │   ├── train_adaptive.py     # Adaptive agent training
 │   ├── train_strategic.py    # Strategic agent training
 │   ├── train_discovery.py    # Discovery mode training
+│   ├── train.py              # General training script
 │   └── ...
 │
 ├── testing/                  # Testing Python scripts
 │   ├── test_cs2_env.py       # CS2 environment tests
 │   ├── test_config.py        # Configuration tests
+│   ├── test_api.py           # API testing script
+│   ├── test_vision_windows.py # Vision interface tests
 │   └── ...
+│
+├── evaluation/               # Evaluation scripts
+│   └── evaluate.py           # Model evaluation script
 │
 ├── utils/                    # Utility Python scripts
 │   ├── setup_gpu.py          # GPU setup utilities
@@ -58,7 +64,6 @@ cs2_rl_agent/
 │
 └── tensorboard/              # TensorBoard logs
 ```
-
 ## Setup
 
 1. Install Anaconda or Miniconda
