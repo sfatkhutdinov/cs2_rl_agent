@@ -1,5 +1,7 @@
 # Comprehensive Codebase Architecture Analysis
 
+*Last updated: March 13, 2025 19:50 - Removed references to bridge_mod folder as it's no longer needed for vision-based implementation*
+
 ## Context
 This document provides a high-level overview of the CS2 reinforcement learning agent's architecture, exploring how different components interact to create a cohesive system for game automation and learning.
 
@@ -51,11 +53,11 @@ The CS2 reinforcement learning agent is organized as a modular, layered system t
 ┌─────────────────────────────────────────────────────────────┐
 │                    Interface Layer                          │
 │                                                             │
-│  ┌────────────────┐  ┌────────────────┐  ┌───────────────┐  │
-│  │ Autonomous     │  │ Ollama Vision  │  │ Bridge Mod    │  │
-│  │ Vision         │  │ Interface      │  │ API Interface │  │
-│  │ Interface      │  │                │  │               │  │
-│  └────────────────┘  └────────────────┘  └───────────────┘  │
+│  ┌────────────────┐  ┌────────────────┐                     │
+│  │ Autonomous     │  │ Ollama Vision  │                     │
+│  │ Vision         │  │ Interface      │                     │
+│  │ Interface      │  │                │                     │
+│  └────────────────┘  └────────────────┘                     │
 └─────────────────────────────────────────────────────────────┘
                          ▲
                          │
@@ -91,8 +93,7 @@ src/
 │
 ├── interface/                # Game interaction interfaces
 │   ├── autonomous_vision.py  # Computer vision-based interface
-│   ├── ollama_vision.py      # ML-based vision interface
-│   └── bridge_mod_api.py     # Communication with game bridge mod
+│   └── ollama_vision.py      # ML-based vision interface
 │
 ├── actions/                  # Action system
 │   ├── action_registry.py    # Central registry of available actions
