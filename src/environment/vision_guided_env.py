@@ -478,7 +478,7 @@ class VisionGuidedCS2Environment(AutonomousCS2Environment):
     
     def close(self):
         """Clean up resources."""
-        if self.vision_update_thread and self.vision_update_thread.is_alive():
+        if hasattr(self, 'vision_update_thread') and self.vision_update_thread and self.vision_update_thread.is_alive():
             self.vision_update_thread.join(timeout=1.0)
         super().close()
     

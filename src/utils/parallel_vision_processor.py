@@ -3,12 +3,14 @@ import time
 import threading
 import queue
 import logging
+import psutil
+import hashlib
 from typing import Dict, Any, List, Optional, Callable, Tuple, Union
 from datetime import datetime
 import numpy as np
 import cv2
 from functools import lru_cache
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from src.utils.logger import Logger
 
@@ -19,20 +21,16 @@ class VisionTask:
     """
     image: np.ndarray  # The image to process
     task_type: str  # Type of vision task (e.g., 'scene_analysis', 'ui_detection', 'text_recognition')
-    priority: int  # Priority level (higher values = higher priority)
-    callback: Callable[[Dict[str, Any]], None]  # Callback function to handle the result
-    timestamp: float = 0.0  # When the task was created
+    priority: int = 1  # Priority level (higher values = higher priority)
+    callback: Optional[Callable[[Dict[str, Any]], None]] = None  # Callback function to handle the result
+    timestamp: float = field(default_factory=time.time)  # When the task was created
     task_id: str = ""  # Unique identifier for this task
     region_of_interest: Optional[Tuple[int, int, int, int]] = None  # (x, y, width, height) or None for full image
-    metadata: Dict[str, Any] = None  # Additional task metadata
+    metadata: Dict[str, Any] = field(default_factory=dict)  # Additional task metadata
     
     def __post_init__(self):
-        if self.timestamp == 0.0:
-            self.timestamp = time.time()
         if not self.task_id:
             self.task_id = f"{self.task_type}_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
-        if self.metadata is None:
-            self.metadata = {}
 
 
 class VisionCache:
@@ -49,324 +47,465 @@ class VisionCache:
         """
         self.max_size = max_size
         self.ttl = ttl
-        self.cache: Dict[str, Tuple[Dict[str, Any], float]] = {}  # {key: (result, timestamp)}
+        self.cache = {}  # Maps cache key to (result, timestamp)
         self.cache_lock = threading.Lock()
-        self.cache_hits = 0
-        self.cache_misses = 0
+        self.stats = {
+            "hits": 0,
+            "misses": 0,
+            "evictions": 0,
+            "size": 0
+        }
     
-    def _generate_key(self, image: np.ndarray, task_type: str, metadata: Dict[str, Any]) -> str:
+    def _generate_cache_key(self, image: np.ndarray, task_type: str, region_of_interest: Optional[Tuple[int, int, int, int]], metadata: Dict[str, Any]) -> str:
         """
-        Generate a cache key based on image content and task parameters.
+        Generate a cache key for the given task parameters.
         
         Args:
-            image: The image data
+            image: The image to process
             task_type: Type of vision task
+            region_of_interest: Region of interest in the image
             metadata: Additional task metadata
             
         Returns:
-            A string key for cache lookup
+            Cache key string
         """
-        # Create a downsampled version of the image for fingerprinting
-        downsampled = cv2.resize(image, (32, 32))
-        img_hash = hash(downsampled.tobytes())
+        # Extract the region of interest if specified
+        if region_of_interest:
+            x, y, w, h = region_of_interest
+            if x >= 0 and y >= 0 and w > 0 and h > 0 and x + w <= image.shape[1] and y + h <= image.shape[0]:
+                roi_image = image[y:y+h, x:x+w]
+            else:
+                roi_image = image
+        else:
+            roi_image = image
         
-        # Create a string representation of metadata
-        meta_str = "_".join(f"{k}:{v}" for k, v in sorted(metadata.items()))
+        # Downsample image for faster hashing
+        scale_factor = 0.25
+        small_image = cv2.resize(roi_image, (0, 0), fx=scale_factor, fy=scale_factor)
         
-        return f"{task_type}_{img_hash}_{meta_str}"
+        # Compute image hash
+        img_hash = hashlib.md5(small_image.tobytes()).hexdigest()
+        
+        # Combine with task type and metadata
+        metadata_str = str(sorted(metadata.items())) if metadata else ""
+        roi_str = str(region_of_interest) if region_of_interest else ""
+        
+        return f"{img_hash}_{task_type}_{roi_str}_{metadata_str}"
     
-    def get(self, image: np.ndarray, task_type: str, metadata: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def get(self, image: np.ndarray, task_type: str, region_of_interest: Optional[Tuple[int, int, int, int]] = None, metadata: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         """
-        Retrieve a result from the cache if available and not expired.
+        Get a cached result if available.
         
         Args:
-            image: The image data
+            image: The image to process
             task_type: Type of vision task
+            region_of_interest: Region of interest in the image
             metadata: Additional task metadata
             
         Returns:
-            Cached result or None if not found/expired
+            Cached result or None if not in cache
         """
-        key = self._generate_key(image, task_type, metadata)
+        if metadata is None:
+            metadata = {}
+        
+        key = self._generate_cache_key(image, task_type, region_of_interest, metadata)
         
         with self.cache_lock:
             if key in self.cache:
                 result, timestamp = self.cache[key]
-                # Check if entry is still valid
+                
+                # Check if the entry is still valid
                 if time.time() - timestamp <= self.ttl:
-                    self.cache_hits += 1
+                    self.stats["hits"] += 1
                     return result
                 else:
                     # Remove expired entry
                     del self.cache[key]
+                    self.stats["evictions"] += 1
+                    self.stats["size"] = len(self.cache)
             
-            self.cache_misses += 1
+            self.stats["misses"] += 1
             return None
     
-    def put(self, image: np.ndarray, task_type: str, metadata: Dict[str, Any], result: Dict[str, Any]) -> None:
+    def put(self, image: np.ndarray, task_type: str, result: Dict[str, Any], region_of_interest: Optional[Tuple[int, int, int, int]] = None, metadata: Optional[Dict[str, Any]] = None) -> None:
         """
         Store a result in the cache.
         
         Args:
-            image: The image data
+            image: The image that was processed
             task_type: Type of vision task
+            result: The processing result
+            region_of_interest: Region of interest in the image
             metadata: Additional task metadata
-            result: The result to cache
         """
-        key = self._generate_key(image, task_type, metadata)
+        if metadata is None:
+            metadata = {}
+        
+        key = self._generate_cache_key(image, task_type, region_of_interest, metadata)
         
         with self.cache_lock:
-            # If cache is full, remove oldest entry
+            # Evict entries if cache is full
             if len(self.cache) >= self.max_size:
-                oldest_key = min(self.cache, key=lambda k: self.cache[k][1])
+                # Find the oldest entry
+                oldest_key = min(self.cache.items(), key=lambda x: x[1][1])[0]
                 del self.cache[oldest_key]
+                self.stats["evictions"] += 1
             
+            # Store the new entry
             self.cache[key] = (result, time.time())
+            self.stats["size"] = len(self.cache)
     
     def clear(self) -> None:
         """Clear the cache."""
         with self.cache_lock:
             self.cache.clear()
+            self.stats["size"] = 0
     
     def get_stats(self) -> Dict[str, Any]:
         """
         Get cache statistics.
         
         Returns:
-            Dictionary of cache statistics
+            Dictionary containing cache statistics
         """
         with self.cache_lock:
-            return {
-                "size": len(self.cache),
-                "max_size": self.max_size,
-                "hit_rate": self.cache_hits / (self.cache_hits + self.cache_misses) if (self.cache_hits + self.cache_misses) > 0 else 0,
-                "hits": self.cache_hits,
-                "misses": self.cache_misses,
-                "ttl": self.ttl
-            }
+            stats = self.stats.copy()
+            total_requests = stats["hits"] + stats["misses"]
+            stats["hit_rate"] = stats["hits"] / total_requests if total_requests > 0 else 0.0
+            return stats
 
 
 class ParallelVisionProcessor:
     """
-    Manages parallel vision processing tasks using a thread pool and priority queue.
+    Parallel processor for vision tasks.
+    
+    This class manages a pool of worker threads to process vision tasks in parallel,
+    with priority queuing and caching of results.
     """
-    def __init__(self, 
-                 config: Dict[str, Any], 
-                 vision_processor: Any, 
-                 num_workers: int = 4,
-                 logger: Optional[Logger] = None):
+    
+    def __init__(self, vision_processor: Any, config: Dict[str, Any], logger: Optional[Logger] = None):
         """
         Initialize the parallel vision processor.
         
         Args:
+            vision_processor: Vision processor object with processing methods
             config: Configuration dictionary
-            vision_processor: The vision model or processor to use
-            num_workers: Number of worker threads
             logger: Logger instance for metrics and debugging
         """
-        self.config = config
         self.vision_processor = vision_processor
-        self.num_workers = num_workers
-        self.logger = logger
+        self.config = config
+        self.logger = logger or logging.getLogger("ParallelVisionProcessor")
         
-        # Set up queuing system
-        self.task_queue = queue.PriorityQueue()  # (priority, task_id, VisionTask)
-        self.results: Dict[str, Dict[str, Any]] = {}
-        self.results_lock = threading.Lock()
+        # Configuration
+        self.min_workers = config.get("min_workers", 2)
+        self.max_workers = config.get("max_workers", 8)
+        self.queue_size = config.get("queue_size", 100)
+        self.cache_size = config.get("cache_size", 200)
+        self.cache_ttl = config.get("cache_ttl", 30.0)  # seconds
+        self.adaptive_workers = config.get("adaptive_workers", True)
+        self.worker_cpu_threshold = config.get("worker_cpu_threshold", 70.0)  # percent
+        self.worker_adjustment_interval = config.get("worker_adjustment_interval", 5.0)  # seconds
         
-        # Set up workers
-        self.workers: List[threading.Thread] = []
-        self.running = True
-        self.tasks_processed = 0
-        self.tasks_queued = 0
-        self.processing_times: List[float] = []
+        # Initialize cache
+        self.cache = VisionCache(max_size=self.cache_size, ttl=self.cache_ttl)
         
-        # Set up cache
-        cache_size = config.get("vision_cache_size", 100)
-        cache_ttl = config.get("vision_cache_ttl", 60.0)
-        self.cache = VisionCache(max_size=cache_size, ttl=cache_ttl)
+        # Initialize task queue with priority
+        self.task_queue = queue.PriorityQueue(maxsize=self.queue_size)
+        
+        # Initialize worker threads
+        self.workers = []
+        self.active_workers = self.min_workers
+        self.worker_lock = threading.Lock()
+        self.shutdown_event = threading.Event()
+        
+        # Initialize metrics
+        self.metrics = {
+            "tasks_queued": 0,
+            "tasks_processed": 0,
+            "queue_depth": 0,
+            "processing_times": [],
+            "worker_count": self.active_workers,
+            "cpu_usage": 0.0
+        }
+        self.metrics_lock = threading.Lock()
         
         # Start worker threads
-        self._start_workers()
+        self._start_workers(self.min_workers)
         
-        if self.logger:
-            self.logger.log_info(f"Started ParallelVisionProcessor with {num_workers} workers")
+        # Start adaptive worker manager if enabled
+        if self.adaptive_workers:
+            self.adaptive_thread = threading.Thread(target=self._adaptive_worker_manager, daemon=True)
+            self.adaptive_thread.start()
     
-    def _start_workers(self) -> None:
-        """Start the worker threads."""
-        for i in range(self.num_workers):
-            worker = threading.Thread(target=self._worker_loop, name=f"vision_worker_{i}")
-            worker.daemon = True
-            worker.start()
-            self.workers.append(worker)
+    def _start_workers(self, count: int) -> None:
+        """
+        Start worker threads.
+        
+        Args:
+            count: Number of worker threads to start
+        """
+        with self.worker_lock:
+            for _ in range(count):
+                worker = threading.Thread(target=self._worker_loop, daemon=True)
+                worker.start()
+                self.workers.append(worker)
+            
+            self.active_workers = len(self.workers)
+            
+            with self.metrics_lock:
+                self.metrics["worker_count"] = self.active_workers
+    
+    def _stop_workers(self, count: int) -> None:
+        """
+        Stop worker threads.
+        
+        Args:
+            count: Number of worker threads to stop
+        """
+        with self.worker_lock:
+            # Can't reduce below min_workers
+            count = min(count, len(self.workers) - self.min_workers)
+            if count <= 0:
+                return
+            
+            # Add sentinel values to stop workers
+            for _ in range(count):
+                self.task_queue.put((0, None))  # Sentinel value
+            
+            # Update active worker count
+            self.active_workers = len(self.workers) - count
+            
+            with self.metrics_lock:
+                self.metrics["worker_count"] = self.active_workers
+    
+    def _adaptive_worker_manager(self) -> None:
+        """
+        Adaptively adjust the number of worker threads based on system load.
+        """
+        last_adjustment_time = time.time()
+        
+        while not self.shutdown_event.is_set():
+            current_time = time.time()
+            
+            # Check if it's time to adjust workers
+            if current_time - last_adjustment_time >= self.worker_adjustment_interval:
+                # Get current CPU usage
+                cpu_usage = psutil.cpu_percent(interval=0.1)
+                
+                with self.metrics_lock:
+                    self.metrics["cpu_usage"] = cpu_usage
+                
+                # Get current queue depth
+                queue_depth = self.task_queue.qsize()
+                
+                with self.metrics_lock:
+                    self.metrics["queue_depth"] = queue_depth
+                
+                # Adjust workers based on CPU usage and queue depth
+                with self.worker_lock:
+                    current_workers = self.active_workers
+                
+                if cpu_usage > self.worker_cpu_threshold and queue_depth > 0:
+                    # System is busy and we have tasks, reduce workers
+                    if current_workers > self.min_workers:
+                        self._stop_workers(1)
+                        self.logger.debug(f"Reduced workers to {self.active_workers} due to high CPU usage ({cpu_usage:.1f}%)")
+                elif queue_depth > current_workers * 2:
+                    # We have more tasks than workers can handle, add workers
+                    if current_workers < self.max_workers:
+                        self._start_workers(1)
+                        self.logger.debug(f"Increased workers to {self.active_workers} due to queue depth ({queue_depth})")
+                elif queue_depth == 0 and current_workers > self.min_workers:
+                    # No tasks, reduce to minimum
+                    self._stop_workers(current_workers - self.min_workers)
+                    self.logger.debug(f"Reduced workers to minimum ({self.min_workers}) due to empty queue")
+                
+                last_adjustment_time = current_time
+            
+            # Sleep to avoid busy waiting
+            time.sleep(0.1)
     
     def _worker_loop(self) -> None:
-        """Main worker thread loop that processes tasks from the queue."""
-        while self.running:
+        """
+        Main loop for worker threads.
+        """
+        while not self.shutdown_event.is_set():
             try:
-                # Get the next task (block for up to 1 second)
-                try:
-                    _, _, task = self.task_queue.get(timeout=1.0)
-                except queue.Empty:
-                    continue
+                # Get a task from the queue
+                priority, task = self.task_queue.get(timeout=0.1)
+                
+                # Check for sentinel value
+                if task is None:
+                    self.task_queue.task_done()
+                    break
                 
                 # Process the task
-                start_time = time.time()
-                
-                # Check cache first
-                cached_result = self.cache.get(task.image, task.task_type, task.metadata)
-                if cached_result:
-                    result = cached_result
-                else:
-                    # Process the image
-                    result = self._process_vision_task(task)
-                    # Cache the result
-                    self.cache.put(task.image, task.task_type, task.metadata, result)
-                
-                processing_time = time.time() - start_time
-                
-                # Store the result
-                with self.results_lock:
-                    self.results[task.task_id] = result
-                    self.tasks_processed += 1
-                    self.processing_times.append(processing_time)
-                    
-                    # Keep only the last 1000 processing times for statistics
-                    if len(self.processing_times) > 1000:
-                        self.processing_times = self.processing_times[-1000:]
-                
-                # Call the callback with the result
-                if task.callback:
-                    task.callback(result)
+                self._process_task(task)
                 
                 # Mark the task as done
                 self.task_queue.task_done()
                 
-                # Log metrics if available
-                if self.logger and self.tasks_processed % 100 == 0:
-                    self._log_metrics()
-                    
+            except queue.Empty:
+                # No tasks available, continue
+                continue
             except Exception as e:
-                if self.logger:
-                    self.logger.log_error(f"Error in vision worker: {str(e)}")
-                else:
-                    logging.error(f"Error in vision worker: {str(e)}")
+                self.logger.error(f"Error in worker thread: {str(e)}")
     
-    def _process_vision_task(self, task: VisionTask) -> Dict[str, Any]:
+    def _process_task(self, task: VisionTask) -> None:
         """
-        Process a single vision task.
+        Process a vision task.
         
         Args:
             task: The vision task to process
-            
-        Returns:
-            Dictionary containing the processing results
         """
-        # Extract region of interest if specified
-        image = task.image
-        if task.region_of_interest:
-            x, y, w, h = task.region_of_interest
-            image = image[y:y+h, x:x+w]
+        # Check cache first
+        cached_result = self.cache.get(
+            task.image, 
+            task.task_type, 
+            task.region_of_interest, 
+            task.metadata
+        )
         
-        # Process based on task type
-        if task.task_type == "scene_analysis":
-            return self.vision_processor.analyze_scene(image, **task.metadata)
-        elif task.task_type == "ui_detection":
-            return self.vision_processor.detect_ui_elements(image, **task.metadata)
-        elif task.task_type == "text_recognition":
-            return self.vision_processor.recognize_text(image, **task.metadata)
-        else:
-            # Generic processing
-            return self.vision_processor.process(image, task.task_type, **task.metadata)
+        if cached_result:
+            # Use cached result
+            if task.callback:
+                task.callback(cached_result)
+            return
+        
+        # Process the task
+        start_time = time.time()
+        
+        try:
+            # Extract region of interest if specified
+            if task.region_of_interest:
+                x, y, w, h = task.region_of_interest
+                if x >= 0 and y >= 0 and w > 0 and h > 0 and x + w <= task.image.shape[1] and y + h <= task.image.shape[0]:
+                    image = task.image[y:y+h, x:x+w]
+                else:
+                    image = task.image
+            else:
+                image = task.image
+            
+            # Call the appropriate method based on task type
+            if task.task_type == "scene_analysis":
+                result = self.vision_processor.analyze_scene(image, **task.metadata)
+            elif task.task_type == "ui_detection":
+                result = self.vision_processor.detect_ui_elements(image, **task.metadata)
+            elif task.task_type == "text_recognition":
+                result = self.vision_processor.recognize_text(image, **task.metadata)
+            else:
+                # Generic processing
+                result = self.vision_processor.process(image, task.task_type, **task.metadata)
+            
+            # Add task metadata to result
+            result["task_id"] = task.task_id
+            result["task_type"] = task.task_type
+            result["processing_time"] = time.time() - start_time
+            
+            # Cache the result
+            self.cache.put(
+                task.image, 
+                task.task_type, 
+                result, 
+                task.region_of_interest, 
+                task.metadata
+            )
+            
+            # Update metrics
+            with self.metrics_lock:
+                self.metrics["tasks_processed"] += 1
+                self.metrics["processing_times"].append(result["processing_time"])
+                # Keep only the last 100 processing times
+                if len(self.metrics["processing_times"]) > 100:
+                    self.metrics["processing_times"] = self.metrics["processing_times"][-100:]
+            
+            # Call the callback with the result
+            if task.callback:
+                task.callback(result)
+                
+        except Exception as e:
+            self.logger.error(f"Error processing vision task: {str(e)}")
+            
+            # Call the callback with an error result
+            if task.callback:
+                error_result = {
+                    "task_id": task.task_id,
+                    "task_type": task.task_type,
+                    "error": str(e),
+                    "success": False
+                }
+                task.callback(error_result)
     
-    def submit_task(self, 
-                   image: np.ndarray, 
-                   task_type: str, 
-                   callback: Optional[Callable[[Dict[str, Any]], None]] = None,
-                   priority: int = 0,
-                   region_of_interest: Optional[Tuple[int, int, int, int]] = None,
+    def submit_task(self, image: np.ndarray, task_type: str, callback: Optional[Callable[[Dict[str, Any]], None]] = None, 
+                   priority: int = 1, region_of_interest: Optional[Tuple[int, int, int, int]] = None, 
                    metadata: Optional[Dict[str, Any]] = None) -> str:
         """
-        Submit a vision processing task.
+        Submit a vision task for processing.
         
         Args:
             image: The image to process
             task_type: Type of vision task
-            callback: Function to call with the result
-            priority: Priority level (higher = higher priority)
-            region_of_interest: Optional region to process (x, y, width, height)
-            metadata: Additional task parameters
+            callback: Callback function to handle the result
+            priority: Priority level (higher values = higher priority)
+            region_of_interest: Region of interest in the image (x, y, width, height)
+            metadata: Additional task metadata
             
         Returns:
-            Task ID that can be used to retrieve the result
+            Task ID
         """
+        if metadata is None:
+            metadata = {}
+        
+        # Create a task
         task = VisionTask(
             image=image,
             task_type=task_type,
-            priority=priority,
             callback=callback,
+            priority=priority,
             region_of_interest=region_of_interest,
-            metadata=metadata or {}
+            metadata=metadata
         )
         
-        # Check cache before queuing
-        cached_result = self.cache.get(image, task_type, task.metadata)
+        # Check cache first for immediate response
+        cached_result = self.cache.get(
+            task.image, 
+            task.task_type, 
+            task.region_of_interest, 
+            task.metadata
+        )
+        
         if cached_result:
-            # Store the result immediately
-            with self.results_lock:
-                self.results[task.task_id] = cached_result
-            
-            # Call the callback if provided
-            if callback:
-                callback(cached_result)
-            
+            # Use cached result
+            if task.callback:
+                task.callback(cached_result)
             return task.task_id
         
-        # Otherwise, queue the task
-        self.task_queue.put((-priority, time.time(), task))  # Negative priority for correct ordering
+        # Update metrics
+        with self.metrics_lock:
+            self.metrics["tasks_queued"] += 1
         
-        with self.results_lock:
-            self.tasks_queued += 1
+        # Add to queue with priority (negative because PriorityQueue is min-heap)
+        self.task_queue.put((-priority, task))
+        
+        # Log metrics if available
+        self._log_metrics()
         
         return task.task_id
     
-    def get_result(self, task_id: str, timeout: Optional[float] = None) -> Optional[Dict[str, Any]]:
-        """
-        Get the result for a specific task.
-        
-        Args:
-            task_id: The task ID
-            timeout: Maximum time to wait for the result (None = wait forever)
-            
-        Returns:
-            The task result or None if not available
-        """
-        start_time = time.time()
-        
-        while timeout is None or (time.time() - start_time) < timeout:
-            with self.results_lock:
-                if task_id in self.results:
-                    return self.results[task_id]
-            
-            # Wait a bit before checking again
-            time.sleep(0.01)
-        
-        return None
-    
     def _log_metrics(self) -> None:
         """Log performance metrics."""
-        if not self.logger:
-            return
-        
-        with self.results_lock:
-            avg_processing_time = np.mean(self.processing_times) if self.processing_times else 0
-            metrics = {
-                "vision_tasks_processed": self.tasks_processed,
-                "vision_tasks_queued": self.tasks_queued,
-                "vision_queue_depth": self.task_queue.qsize(),
-                "vision_avg_processing_time": avg_processing_time,
-                "vision_cache_hit_rate": self.cache.get_stats()["hit_rate"]
-            }
+        # Only log occasionally to avoid spam
+        if self.metrics["tasks_processed"] % 10 == 0:
+            with self.metrics_lock:
+                metrics = {
+                    "tasks_queued": self.metrics["tasks_queued"],
+                    "tasks_processed": self.metrics["tasks_processed"],
+                    "queue_depth": self.task_queue.qsize(),
+                    "worker_count": self.active_workers,
+                    "avg_processing_time": sum(self.metrics["processing_times"]) / len(self.metrics["processing_times"]) if self.metrics["processing_times"] else 0,
+                    "cache_stats": self.cache.get_stats(),
+                    "cpu_usage": self.metrics["cpu_usage"]
+                }
             
             self.logger.log_info(f"Vision metrics: {metrics}")
     
@@ -377,25 +516,32 @@ class ParallelVisionProcessor:
         Returns:
             Dictionary of metrics
         """
-        with self.results_lock:
-            avg_processing_time = np.mean(self.processing_times) if self.processing_times else 0
-            return {
-                "tasks_processed": self.tasks_processed,
-                "tasks_queued": self.tasks_queued,
+        with self.metrics_lock:
+            metrics = {
+                "tasks_queued": self.metrics["tasks_queued"],
+                "tasks_processed": self.metrics["tasks_processed"],
                 "queue_depth": self.task_queue.qsize(),
-                "avg_processing_time": avg_processing_time,
+                "worker_count": self.active_workers,
+                "avg_processing_time": sum(self.metrics["processing_times"]) / len(self.metrics["processing_times"]) if self.metrics["processing_times"] else 0,
                 "cache_stats": self.cache.get_stats(),
-                "num_workers": self.num_workers
+                "cpu_usage": self.metrics["cpu_usage"]
             }
+        
+        return metrics
     
     def shutdown(self) -> None:
-        """Shutdown the processor and stop all workers."""
-        self.running = False
+        """Shutdown the processor and all worker threads."""
+        self.logger.info("Shutting down parallel vision processor...")
+        
+        # Signal shutdown
+        self.shutdown_event.set()
+        
+        # Add sentinel values to stop all workers
+        for _ in range(len(self.workers)):
+            self.task_queue.put((0, None))  # Sentinel value
         
         # Wait for all workers to finish
         for worker in self.workers:
-            if worker.is_alive():
-                worker.join(timeout=1.0)
+            worker.join(timeout=1.0)
         
-        if self.logger:
-            self.logger.log_info("ParallelVisionProcessor shutdown complete") 
+        self.logger.info("Parallel vision processor shutdown complete.") 
