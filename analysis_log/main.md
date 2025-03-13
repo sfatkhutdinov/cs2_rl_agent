@@ -53,6 +53,8 @@ The following analyses have been completed and can be accessed:
 - [Performance Profiling Overview](performance/performance_profiling.md) ✓
 - [Model Evaluation Methods](testing/model_evaluation.md) ✓
 - [Parallel Processing Pipeline](performance/parallel_processing.md) ✓
+- [Reward Calculation](components/reward_calculation.md) ✓
+- [Testing Infrastructure](testing/testing_infrastructure.md) ✓
 
 ## Chronological Log History
 The original chronological log entries can be found in [original_codebase_analysis_log.md](original_codebase_analysis_log.md).
