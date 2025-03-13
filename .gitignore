@@ -65,6 +65,8 @@ data/
 # Tensorboard
 runs/
 events.out.tfevents*
+tensorboard/
+!tensorboard/.gitkeep
 
 # Model checkpoints
 *.pt
@@ -77,4 +79,16 @@ screenshots/
 recordings/
 
 # Configs (except defaults)
-!src/config/default.yaml 
+!src/config/default.yaml
+
+# Additional project-specific files
+.vs/
+.cursor/
+debug/
+!debug/.gitkeep
+
+# Temporary files
+*.tmp
+*.bak
+*.log
+*.orig 

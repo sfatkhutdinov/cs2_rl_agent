@@ -1,179 +1,255 @@
 # Discovery Agent Implementation Analysis
 
-*Last updated: 2024-03-19 - Initial creation of discovery agent analysis*
+*Last updated: March 14, 2025 - Initial documentation*
 
-**Tags:** #agent #discovery #implementation #exploration
+**Tags:** #agent #discovery #implementation #reinforcement-learning #ppo
 
-## Context
+## Overview
+The Discovery Agent is a specialized reinforcement learning agent designed for exploring and discovering UI elements and navigation paths in the game environment. It focuses on menu navigation, interface discovery, and understanding the available interactions within the game, serving as a foundation for more complex strategic agents.
 
-The Discovery Agent is a specialized agent implementation focused on exploring and discovering UI elements and basic game mechanics in Cities: Skylines 2. It operates within the DiscoveryEnvironment and serves as the foundation for the early learning phase in the adaptive agent's progression. This analysis examines the implementation of the Discovery Agent, its architecture, capabilities, and integration with the broader CS2 reinforcement learning system.
+## Implementation Architecture
 
-## Methodology
+### Core Components
+The Discovery Agent is implemented as a class that wraps a Proximal Policy Optimization (PPO) model from the Stable Baselines 3 library. The key components include:
 
-This analysis was performed by examining the following components:
-- `src/agent/discovery_agent.py` - Core implementation of the Discovery Agent
-- `src/environment/discovery_env.py` - The environment with which the agent interacts
-- `training/train_discovery.py` - The training script that utilizes the Discovery Agent
-- Tests and dependencies related to the Discovery Agent functionality
+1. **Model Configuration**: The agent uses a configuration-driven approach to set up the PPO model parameters.
+2. **Training Framework**: Built-in methods for episodic and continuous training with checkpoint saving.
+3. **Prediction Interface**: Methods for action selection from observations.
+4. **State Tracking**: Mechanisms to track discovered elements and training progress.
 
-The analysis focuses on understanding the agent's structure, learning mechanisms, and core capabilities for game exploration and UI discovery.
+## Key Implementation Details
 
-## Findings
+### Initialization and Setup
+```python
+def __init__(self, environment: gym.Env, config: Dict[str, Any]):
+    """Initialize the discovery agent."""
+    self.env = environment
+    self.config = config
+    # ... other initialization code ...
+    self._setup_model()
+```
 
-### Agent Architecture
+The agent is initialized with a reference to the environment and a configuration dictionary that controls various aspects of its behavior. During initialization, the agent sets up:
+- Logging
+- File paths for models and logs
+- The PPO model with appropriate parameters
+- Metrics tracking for discovered elements
 
-The Discovery Agent is implemented as a reinforcement learning agent using the Proximal Policy Optimization (PPO) algorithm from Stable Baselines 3. Its core components include:
+### Model Configuration
+```python
+def _setup_model(self):
+    """Set up the PPO model for the agent."""
+    # ... directory creation ...
+    
+    # Get model parameters from config
+    policy_kwargs = {}
+    if self.config.get("model", {}).get("use_lstm", False):
+        policy_kwargs["lstm_hidden_size"] = self.config.get("model", {}).get("lstm_hidden_size", 64)
+        policy_kwargs["net_arch"] = [dict(pi=[64, 64], vf=[64, 64])]
+    
+    # ... policy determination ...
+    
+    # Initialize the PPO model
+    self.model = PPO(
+        policy=policy,
+        env=self.env,
+        learning_rate=self.config.get("model", {}).get("learning_rate", 3e-4),
+        # ... other parameters ...
+    )
+```
 
-1. **Model Configuration**:
-   - Uses either MultiInputPolicy (for dictionary observation spaces) or MlpPolicy (for flattened spaces)
-   - Supports optional LSTM-based architectures for temporal reasoning
-   - Configurable hyperparameters for learning rate, batch size, epochs, and exploration coefficients
+The model setup process includes:
+- Policy network configuration (including optional LSTM for memory)
+- Automatic policy type selection based on observation space
+- Hyperparameter configuration from the provided config dictionary
 
-2. **State Tracking**:
-   - Maintains metrics for total timesteps, episodes, and discovered UI elements
-   - Logs training progress and discoveries
-   - Implements configurable checkpoint mechanisms
+### Training Process
+```python
+def train(self, total_timesteps: int, callback=None):
+    """Train the agent for a specified number of timesteps."""
+    callbacks = self._setup_callbacks(callback)
+    
+    try:
+        self.model.learn(
+            total_timesteps=total_timesteps,
+            callback=callbacks,
+            log_interval=10
+        )
+        
+        # Save the final model
+        self.save(os.path.join(self.model_dir, "final_model"))
+        # ... success handling ...
+        
+    except Exception as e:
+        # ... error handling and emergency save ...
+```
 
-3. **Training Interface**:
-   - Provides methods for full training runs and episodic training
-   - Handles environment interactions, action selection, and reward processing
-   - Implements error recovery and emergency model saving
+The training process includes:
+- Setup of training callbacks (checkpoints, etc.)
+- Integration with Stable Baselines 3 learning API
+- Automatic model saving at completion
+- Error recovery with emergency model saving
 
-4. **Persistence Support**:
-   - Model saving and loading capabilities
-   - Training checkpoint management
-   - Configuration persistence for reproducibility
+### Episode-Based Training
+```python
+def train_episode(self, timesteps_per_episode: int):
+    """Train the agent for a single episode."""
+    # ... episode setup ...
+    
+    # Reset the environment
+    obs, _ = self.env.reset()
+    done = False
+    
+    # Run the episode
+    for _ in range(timesteps_per_episode):
+        # Select action
+        action, _ = self.model.predict(obs, deterministic=False)
+        
+        # Execute action
+        next_obs, reward, terminated, truncated, info = self.env.step(action)
+        # ... episode tracking ...
+        
+        # Break if episode is done
+        if done:
+            break
+    
+    # ... return episode info ...
+```
 
-### Learning Process
+The episode-based training provides:
+- Finer control over training duration
+- Comprehensive episode metrics
+- Support for episode-specific exploration strategies
 
-The Discovery Agent's learning process follows these key steps:
+### Action Prediction
+```python
+def predict(self, observation, deterministic=False):
+    """Generate a prediction from the model for a given observation."""
+    if self.model is None:
+        # ... fallback to random action ...
+    
+    action, state = self.model.predict(observation, deterministic=deterministic)
+    return action, state
+```
 
-1. **Initialization**: 
-   - Setup of the PPO model with appropriate policies based on observation space type
-   - Configuration of training parameters and directories
+The prediction interface:
+- Handles uninitialized model scenarios gracefully
+- Supports both deterministic (exploitation) and non-deterministic (exploration) prediction
+- Returns both actions and internal state
 
-2. **Training Loop**:
-   - Environment observation collection
-   - Action prediction using the policy model
-   - Environment step execution
-   - Reward collection and processing
-   - Model parameter updates using PPO
+### Model Persistence
+```python
+def save(self, path: str):
+    """Save the agent's model to a file."""
+    # ... implementation ...
 
-3. **Feedback Mechanisms**:
-   - Logging of training progress
-   - Regular checkpointing for training recovery
-   - Episode statistics collection
-   - Success metrics tracking
+def load(self, path: str):
+    """Load the agent's model from a file."""
+    # ... implementation ...
+```
 
-### Key Methods
+The agent provides straightforward methods for:
+- Saving trained models to disk
+- Loading pre-trained models
+- Error handling for missing files or initialization issues
 
-The Discovery Agent implements several critical methods:
+## Integration with Environment
 
-1. **`_setup_model()`**:
-   - Creates the PPO model with appropriate policy type
-   - Configures PPO hyperparameters based on configuration
-   - Handles different observation space structures
+The Discovery Agent is designed to work with the DiscoveryEnvironment, which provides:
+- Specialized observation spaces focusing on UI elements
+- Reward structures that incentivize exploration and discovery
+- Information about newly discovered elements and navigation paths
 
-2. **`train(total_timesteps, callback=None)`**:
-   - Main training method that runs for a specified number of timesteps
-   - Integrates with Stable Baselines 3 training
-   - Implements checkpoint callbacks
-   - Provides error handling and emergency saving
+The agent-environment interaction is based on the standard Gymnasium (formerly Gym) interface:
+```python
+# Reset at the beginning
+observation, info = environment.reset()
 
-3. **`train_episode(timesteps_per_episode)`**:
-   - Runs a single training episode
-   - Tracks episode-specific metrics
-   - Returns detailed episode information
+# Step loop
+action, _ = agent.predict(observation)
+observation, reward, terminated, truncated, info = environment.step(action)
+```
 
-4. **`predict(observation, deterministic=False)`**:
-   - Performs action prediction for a given observation
-   - Handles both deterministic (exploitation) and stochastic (exploration) modes
-   - Implements fallback for uninitialized models
+## Performance Characteristics
 
-5. **`save(path)` / `load(path)`**:
-   - Persistence methods for saving and loading trained models
-   - Error handling for missing files and initialization issues
+### Strengths
+1. **Exploration Focus**: Optimized for discovering new UI elements and game mechanics
+2. **Configurability**: Highly configurable through the configuration dictionary
+3. **Error Resilience**: Robust error handling with emergency model saving
+4. **Memory Capability**: Optional LSTM support for handling sequential dependencies
 
-### Integration with Environment
+### Limitations
+1. **Computational Requirements**: PPO training can be computationally intensive
+2. **Exploration-Exploitation Balance**: May require tuning of exploration parameters
+3. **Single-Task Focus**: Primarily designed for discovery rather than strategic gameplay
 
-The Discovery Agent interacts closely with the DiscoveryEnvironment, which provides:
+## Usage Examples
 
-1. **Discovery-specific Observations**:
-   - UI element detection
-   - Menu structure information
-   - Game state metrics
+### Basic Training
+```python
+from src.agent.discovery_agent import DiscoveryAgent
+from src.environment.discovery_env import DiscoveryEnvironment
 
-2. **Specialized Action Space**:
-   - UI navigation actions
-   - Menu interaction actions
-   - Generic game control actions
+# Create environment
+env = DiscoveryEnvironment(config)
 
-3. **Discovery-focused Rewards**:
-   - Rewards for discovering new UI elements
-   - Rewards for successful menu navigation
-   - Rewards for tutorial progression
+# Create and train agent
+agent = DiscoveryAgent(env, config)
+agent.train(total_timesteps=1000000)
+```
+
+### Loading and Using a Pre-trained Agent
+```python
+# Create environment
+env = DiscoveryEnvironment(config)
+
+# Create agent and load model
+agent = DiscoveryAgent(env, config)
+agent.load("models/discovery/best_model")
+
+# Use for prediction
+obs, _ = env.reset()
+while True:
+    action, _ = agent.predict(obs, deterministic=True)
+    obs, reward, done, _, info = env.step(action)
+    if done:
+        break
+```
 
 ## Relationship to Other Components
 
-The Discovery Agent interfaces with several other system components:
+### Dependency on Configuration System
+The agent relies heavily on the configuration system to control various aspects of its behavior, including:
+- Model architecture and hyperparameters
+- Training parameters and checkpointing
+- File paths and logging
 
-1. **Adaptive Agent**: 
-   - Utilized as the foundation mode in the adaptive training system
-   - Knowledge from discovery phase transferred to other modes
-   - UI element discoveries persist in shared knowledge base
+### Integration with Training Scripts
+The Discovery Agent is typically used by training scripts like `train_discovery.py`, which handle:
+- Environment setup
+- Configuration loading
+- Training loops and evaluation
+- Model saving and loading
 
-2. **Training Framework**:
-   - Integrated with train_discovery.py for standalone training
-   - Used as a component in the adaptive training pipeline
+### Foundation for Strategic Agents
+The discoveries made by this agent can be used by more sophisticated agents:
+- The Strategic Agent can use discovered UI elements for strategic planning
+- The Adaptive Agent can leverage navigation paths found by the Discovery Agent
 
-3. **Testing Infrastructure**:
-   - Tests verify its operation with the DiscoveryEnvironment
-   - Integration tests with the adaptive mode-switching system
+## Future Enhancement Opportunities
 
-4. **Vision System**:
-   - Leverages the vision system for UI element detection
-   - Uses vision feedback to guide exploration
+1. **Enhanced Exploration Strategies**: Implement more sophisticated exploration methods like intrinsic motivation
+2. **Multi-objective Training**: Support for balancing multiple objectives (discovery, navigation efficiency, etc.)
+3. **Transfer Learning**: Methods to transfer knowledge from discovery to strategic agents
+4. **Active Learning**: Integration with active learning approaches to guide exploration
+5. **Parallelized Training**: Support for distributed training across multiple environments
 
-## Optimization Opportunities
+## Related Documentation
+- [Discovery Environment Implementation](../training/discovery_environment.md)
+- [Training Scripts Overview](../training/training_scripts_overview.md)
+- [Discovery-Based Training](../training/discovery_training.md)
+- [Strategic Agent Analysis](strategic_agent.md)
 
-1. **Enhanced Exploration Strategies**:
-   - Implement more sophisticated exploration policies (e.g., curiosity-driven exploration)
-   - Add intrinsic motivation rewards to improve discovery efficiency
-   - Develop better prioritization of unexplored areas
+---
 
-2. **Improved Knowledge Representation**:
-   - More structured representation of discovered UI elements
-   - Better encoding of action-element relationships
-   - Hierarchical representation of menu structures
-
-3. **Transfer Learning Enhancements**:
-   - Improved transfer of discoveries to other agent modes
-   - More efficient knowledge sharing between training sessions
-   - Better persistence of learned navigation patterns
-
-4. **Model Architecture Improvements**:
-   - Test alternative neural network architectures
-   - Evaluate transformer-based models for better context understanding
-   - Explore hybrid models that combine RL with heuristic approaches
-
-5. **Training Efficiency**:
-   - Implement experience replay for more efficient sample use
-   - Explore curriculum learning to structure the discovery process
-   - Add early stopping based on discovery saturation
-
-## Next Steps
-
-Further investigation should focus on:
-
-1. Analyzing the effectiveness of different PPO hyperparameter configurations for discovery tasks
-2. Documenting the interaction patterns between the agent and environment in more detail
-3. Evaluating the completeness of UI element discovery compared to manual exploration
-4. Measuring discovery efficiency across different environment configurations
-5. Testing alternative RL algorithms beyond PPO for the discovery task
-
-## References
-
-- [Discovery-Based Training](../training/discovery_training.md) - Analysis of the discovery training process
-- [DiscoveryEnvironment Implementation](../training/discovery_environment.md) - Analysis of the environment the agent operates in
-- [Adaptive Agent System](adaptive_agent.md) - Analysis of the adaptive agent that incorporates the discovery agent
-- [Training Scripts Overview](../training/training_scripts_overview.md) - Overview of all training approaches 
+*For questions or further details about the Discovery Agent implementation, please contact the project maintainers.* 

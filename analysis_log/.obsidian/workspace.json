@@ -163,6 +163,7 @@
   },
   "active": "5c2df5fa8fa857d8",
   "lastOpenFiles": [
+    "tools/batch_scripts_reference.md",
     "evaluation/evaluation_overview.md",
     "evaluation",
     "testing/parallel_vision_testing.md",
@@ -198,7 +199,6 @@
     "testing/10_improvement_recommendations.md",
     "testing/09_challenges_limitations.md",
     "testing/08_coverage_analysis.md",
-    "testing/07_test_automation.md",
     "Untitled.canvas"
   ]
 }
