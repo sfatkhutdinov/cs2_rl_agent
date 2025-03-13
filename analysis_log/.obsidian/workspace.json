@@ -163,6 +163,10 @@
   },
   "active": "5c2df5fa8fa857d8",
   "lastOpenFiles": [
+    "testing/parallel_vision_testing.md",
+    "src/utils/tests",
+    "src/utils",
+    "src",
     "link_check_results.csv",
     "training/autonomous_training.md",
     "environment/autonomous_environment.md",

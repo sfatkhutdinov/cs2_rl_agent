@@ -1,6 +1,117 @@
 # CS2 Reinforcement Learning Agent Analysis Log
 
-*Last updated: 2024-03-25 - Fixed inconsistency with autonomous environment listing*
+<!-- 
+META PROMPT FOR DOCUMENTATION WORK:
+1. ALWAYS check current date format: Use March 13, 2025 format for consistency
+
+2. ALWAYS check existing directory structure before creating new files:
+   - Use list_dir to verify directory structure
+   - Check for existing files using file_search before creating new ones
+   - Use naming conventions consistent with existing files
+   - CONFIRM project structure follows these guidelines:
+     * All documentation files go in analysis_log/ and its subdirectories
+     * Test files go in the testing/ directory, NOT in src/utils/tests/
+     * Source code is in src/ with appropriate subdirectories
+     * NEVER create duplicate directories or parallel structures
+
+3. ALWAYS verify file references:
+   - Ensure links point to actual files that exist
+   - Use relative paths consistently  
+
+4. ALWAYS check existing documentation structure:
+   - Review main.md for organization principles
+   - Follow established section and document patterns
+   - Use consistent formatting and heading structure
+
+5. ALWAYS maintain proper document metadata:
+   - Include last updated dates in the correct format
+   - Use appropriate tags from document_tags.md
+   - Follow file naming conventions
+
+6. DOCUMENT & LOG ACTIONS EFFICIENTLY:
+   - Begin each session with a quick scan of main.md and related files
+   - Create a session work log with planned actions and completed steps
+   - Summarize file changes made in each session
+   - Document decision points and reasoning
+   - Create a mental map of document relationships
+
+7. MAINTAIN WORK CONTEXT:
+   - Track modified files with their locations and purposes
+   - Maintain a running summary of major changes
+   - Note which areas of documentation are complete vs. in progress
+   - Create mental shortcuts for navigating the documentation hierarchy
+   - Before ending a session, note the state and next steps
+
+8. HANDLE INFORMATION OVERLOAD:
+   - Prioritize recent changes over historical context
+   - Focus on document sections directly relevant to current task
+   - Use abstraction to summarize complex details when appropriate
+   - Create temporary reference notes for working memory
+   - Explicitly acknowledge knowledge gaps rather than making assumptions
+
+9. CORRECT MISTAKES IMMEDIATELY:
+   - If duplicate files/directories are created, identify and remove them
+   - Document the error correction to avoid repeating mistakes
+   - Update all references to use the correct paths
+   - Use delete_file tool to remove erroneous files after backing up content
+   - If structure changes, create a migration plan and update all references
+
+10. PROJECT STRUCTURE REFERENCE:
+    - analysis_log/ - All documentation and analysis
+      * architecture/ - System architecture documentation
+      * components/ - Component-specific documentation
+      * environment/ - Environment implementation details
+      * performance/ - Performance analysis and optimization
+      * testing/ - Test documentation (NOT implementation)
+      * training/ - Training process documentation
+      * tools/ - Documentation of project tools
+      * visualization/ - Documentation of visualization tools
+    - src/ - Source code
+      * agent/ - Agent implementations
+      * environment/ - Environment implementations
+      * utils/ - Utility code
+      * vision/ - Vision processing code
+      * training/ - Training code
+    - testing/ - Test implementation files
+
+11. TRACK ALL CHANGES SYSTEMATICALLY:
+    - Maintain an in-session changelog of all modifications
+    - For each file modified, record:
+      * File path
+      * Nature of changes made
+      * Reason for the change
+      * Related files that might need updates
+    - Re-check this changelog before finalizing any work
+    - Use this changelog to verify that all necessary changes are complete
+
+12. PRE-EXECUTION VERIFICATION:
+    - Before creating/modifying files, verbalize the plan in detail
+    - List specific files to be modified and the exact changes
+    - Double-check paths and references before creating new files
+    - Perform dry-run reasoning for complex changes
+    - Always use the most specific tool for the job (e.g., grep_search over general searching)
+
+13. USE PROCEDURAL TEMPLATES:
+    - For documentation: Context → Implementation → Testing → Reference
+    - For test files: Setup → Test Cases → Cleanup → Assertions
+    - For code changes: Understand → Plan → Implement → Verify
+    - For bug fixes: Reproduce → Diagnose → Fix → Test
+
+14. EMPLOY VERIFICATION CHECKLISTS:
+    - After file creation: ✓Path correct ✓Format consistent ✓Links valid
+    - After file modification: ✓All references updated ✓Format maintained
+    - After file deletion: ✓All references removed/redirected ✓No dangling links
+    - After major changes: ✓Documentation updated ✓Tests pass ✓Integration verified
+
+15. LEARN FROM PATTERNS AND MISTAKES:
+    - Note recurring patterns to create reusable templates
+    - Record any mistakes made and create explicit rules to avoid them
+    - Develop guardrails for error-prone tasks
+    - Create progressive verification steps for complex procedures
+    - Build a repertoire of successful approaches to reuse
+-->
+
+*Last updated: March 13, 2025 - Fixed inconsistency with autonomous environment listing*
 
 ## Overview
 This directory contains a comprehensive analysis of the CS2 reinforcement learning agent codebase, organized by component type. This main file serves as an index to navigate the detailed analyses in subdirectories.
@@ -85,6 +196,7 @@ The following analyses have been completed and can be accessed:
 - [Vision-Guided Environment Implementation](training/vision_guided_environment.md) ✓
 - [Autonomous Environment Implementation](environment/autonomous_environment.md) ✓
 - [Autonomous Training](training/autonomous_training.md) ✓
+- [Parallel Vision Processor Implementation](performance/parallel_vision_implementation.md) ✓
 
 ## Analyses in Progress
 The following analyses are currently in progress:

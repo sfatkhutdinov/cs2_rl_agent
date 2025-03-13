@@ -75,3 +75,11 @@ Consider running this link checker:
 ## Related Tools
 - [Document Tagging System](../document_tags.md) - For tag-based organization
 - [Component Relationship Visualization](../visualization/component_relationships.md) - For structural visualization 
+
+Examples of link formats:
+```markdown
+[Link Text](file.md)
+[Link Text](subdirectory/file.md)
+[Link Text](../parent-directory/file.md)
+[Link Text](/absolute/path/file.md)
+``` 

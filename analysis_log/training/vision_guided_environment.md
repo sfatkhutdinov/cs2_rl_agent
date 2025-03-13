@@ -225,6 +225,6 @@ Further investigation should focus on:
 ## References
 
 - [Discovery Environment Implementation](discovery_environment.md) - Analysis of the environment that extends the vision-guided environment
-- [Autonomous Environment Implementation](autonomous_environment.md) - Analysis of the parent environment class
+- [Autonomous Environment Implementation](../environment/autonomous_environment.md) - Analysis of the parent environment class
 - [Ollama Vision Interface](../components/ollama_vision.md) - Analysis of the vision interface used by this environment
 - [Training Scripts Overview](training_scripts_overview.md) - Overview of all training approaches 
