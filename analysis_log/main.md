@@ -381,10 +381,10 @@ META PROMPT FOR DOCUMENTATION WORK:
 
 -->
 
-*Last updated: March 13, 2025 20:41 - Added batch script optimization documentation reference*
+*Last updated: March 13, 2025 21:06 - Updated to reflect streamlined focus on adaptive agent as primary orchestrator*
 
 ## Overview
-This directory contains a comprehensive analysis of the CS2 reinforcement learning agent codebase, organized by component type. This main file serves as an index to navigate the detailed analyses in subdirectories.
+This directory contains a comprehensive analysis of the CS2 reinforcement learning agent codebase, organized by component type. This main file serves as an index to navigate the detailed analyses in subdirectories. The project has been streamlined to focus on the adaptive agent as the primary orchestrator of all other agent types.
 
 ## Key Findings and Recommendations
 For a complete overview of all findings and strategic recommendations, see:
@@ -398,10 +398,10 @@ For a complete overview of all findings and strategic recommendations, see:
 - [Comprehensive Codebase Architecture](architecture/comprehensive_architecture.md) - Complete system architecture overview
 - [Codebase Structure and Dependencies](architecture/codebase_mindmap.md) - Visual mindmap of file relationships and dependencies
 - [Action System and Feature Extraction](architecture/action_system.md) - How actions are executed and observations processed
-- [Adaptive Agent System](components/adaptive_agent.md) - Dynamic mode-switching agent implementation
+- [Adaptive Agent System](components/adaptive_agent.md) - Dynamic mode-switching agent implementation (primary orchestrator)
 - [Strategic Agent Analysis](components/strategic_agent.md) - Advanced agent with causal modeling and goal inference
 - [Component Integration](architecture/component_integration.md) - How components interact as a system
-- [Configuration System](architecture/configuration_system.md) - Configuration system (Note: bridge_mod folder has been removed as it's no longer needed for vision-based implementation)
+- [Configuration System](architecture/configuration_system.md) - Configuration system
 
 ### Environment Analysis
 - [Autonomous Environment Implementation](environment/autonomous_environment.md) - Environment with autonomous capabilities
@@ -446,6 +446,22 @@ For a complete overview of all findings and strategic recommendations, see:
 - [Batch Script Optimizations](tools/batch_script_optimizations.md) - Documentation of batch script performance improvements
 - [Cursor Project Rules](../cursor_project_rules.md) - Project-specific guidelines for maintaining consistent documentation
 
+## Adaptive Agent as Primary Orchestrator
+
+The project has been streamlined to focus on the adaptive agent as the primary orchestrator of all other agent types. The adaptive agent dynamically switches between different modes (discovery, tutorial, vision, autonomous, strategic) based on performance metrics and game state feedback.
+
+### Key Features of Adaptive Agent Orchestration
+- **Dynamic Mode Switching**: Automatically transitions between agent modes based on performance metrics
+- **Unified Configuration**: Uses a primary configuration file that references mode-specific configurations
+- **Centralized Training**: Single training pipeline that manages all agent types
+- **Knowledge Transfer**: Transfers knowledge between different modes of operation
+- **Performance Monitoring**: Tracks metrics across all modes to determine optimal transitions
+
+### Deployment Scripts
+The deployment process has been simplified with two main batch files:
+- `scripts/deployment/run_adaptive_agent.bat` - Streamlined deployment script for running the adaptive agent
+- `scripts/deployment/all_in_one_setup_and_train.bat` - Comprehensive setup and training script for the adaptive agent
+
 ## Completed Analyses
 The following analyses have been completed and can be accessed:
 - [Comprehensive Synthesis](architecture/comprehensive_synthesis.md) ✓
@@ -477,6 +493,7 @@ The following analyses have been completed and can be accessed:
 - [Bridge Protocol Optimization](performance/bridge_optimization.md) ✓
 - [TensorFlow Compatibility Fixes](training/adaptive_agent_training.md#tensorflow-compatibility-issues) ✓
 - [Batch Script Optimizations](tools/batch_script_optimizations.md) ✓
+- [Adaptive Agent Orchestration](architecture/adaptive_orchestration.md) ✓
 
 ## Analyses in Progress
 The following analyses are currently in progress:
