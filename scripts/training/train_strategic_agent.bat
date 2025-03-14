@@ -8,6 +8,9 @@ echo ======================================================
 REM Set working directory to script location
 cd /d "%~dp0"
 
+REM Include common functions library
+call %~dp0..\utils\common_functions.bat
+
 REM Check for help command
 if /I "%~1"=="help" (
     echo Usage: train_strategic_agent.bat [timesteps] [bootstrap] [use_adaptive] [load_checkpoint]
@@ -50,36 +53,36 @@ if not "%CHECKPOINT%"=="" echo - Loading checkpoint: %CHECKPOINT%
 REM ======== STEP 1: Check Python Environment ========
 echo.
 echo Checking Python environment...
-call check_conda.bat
-if %ERRORLEVEL% neq 0 (
-    echo ERROR: Conda environment not properly set up
-    echo Please run all_in_one_setup_and_train.bat first to set up the environment
-    pause
-    exit /b 1
-)
+
+REM Activate conda environment (only if needed)
+call :activate_conda
 
 REM ======== STEP 2: Check Ollama ========
 echo.
 echo Checking if Ollama is running...
-curl -s http://localhost:11434/api/tags > nul
-if errorlevel 1 (
-    echo ERROR: Ollama is not running. Please start Ollama first.
-    echo You can download Ollama from: https://ollama.ai/
-    echo After installation, run: ollama serve
-    pause
-    exit /b 1
+call :check_ollama
+
+REM Setup GPU environment
+call :setup_gpu
+
+REM Check for GPU with caching
+call :detect_gpu
+
+if "%GPU_AVAILABLE%"=="1" (
+    echo NVIDIA GPU detected with CUDA version %CUDA_VERSION%
+    echo Training will use GPU acceleration.
+) else (
+    echo WARNING: No GPU detected or CUDA drivers not properly installed.
+    echo Training will proceed with CPU only (slower).
+    echo For GPU support, install NVIDIA drivers from: https://www.nvidia.com/Download/index.aspx
 )
 
 echo Checking if required model is available...
 curl -s http://localhost:11434/api/tags | findstr "granite3.2-vision" > nul
 if errorlevel 1 (
     echo Downloading Granite 3.2 Vision model...
-    curl -X POST http://localhost:11434/api/pull -d "{\"name\":\"granite3.2-vision:latest\"}"
-    if errorlevel 1 (
-        echo ERROR: Failed to download vision model.
-        pause
-        exit /b 1
-    )
+    set PULL_CMD=curl -X POST http://localhost:11434/api/pull -d "{\"name\":\"granite3.2-vision:latest\"}"
+    call :error_handler "%PULL_CMD%" 3
 ) else (
     echo Granite vision model already installed.
 )
@@ -101,31 +104,37 @@ echo.
 timeout /t 5
 
 REM Build command with appropriate flags
-set CMD=python train_strategic.py --timesteps %TIMESTEPS%
+set TRAIN_CMD=python train_strategic.py --timesteps %TIMESTEPS%
 
 if /I "%BOOTSTRAP%"=="true" (
-    set CMD=!CMD! --knowledge-bootstrap
+    set TRAIN_CMD=!TRAIN_CMD! --knowledge-bootstrap
 )
 
 if /I "%USE_ADAPTIVE%"=="true" (
-    set CMD=!CMD! --use-adaptive
+    set TRAIN_CMD=!TRAIN_CMD! --use-adaptive
 )
 
 if not "%CHECKPOINT%"=="" (
-    set CMD=!CMD! --load-checkpoint "%CHECKPOINT%"
+    set TRAIN_CMD=!TRAIN_CMD! --load-checkpoint "%CHECKPOINT%"
 )
 
-REM Run the training
+REM Run the training with error handling
 echo Starting strategic agent training...
-echo Running command: !CMD!
-!CMD!
+echo Running command: !TRAIN_CMD!
+call :error_handler "!TRAIN_CMD!" 3
+
+REM Set high priority for Python processes
+call :set_high_priority "python.exe"
+
+REM Clean up temporary files
+call :cleanup_temp "temp_strategic_*.txt"
 
 echo.
 if %ERRORLEVEL% equ 0 (
     echo Strategic agent training completed successfully!
 ) else (
     echo Strategic agent training encountered an error.
-    echo Please check the logs for more information.
+    echo Please check error_log.txt for more information.
 )
 
 pause

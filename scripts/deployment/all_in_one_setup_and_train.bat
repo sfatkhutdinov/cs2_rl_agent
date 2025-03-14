@@ -8,6 +8,9 @@ echo ======================================================
 REM Set working directory to script location
 cd /d "%~dp0"
 
+REM Include common functions library
+call ..\utils\common_functions.bat
+
 REM Check for help command
 if /I "%~1"=="help" (
     echo Usage: all_in_one_setup_and_train.bat [timesteps] [mode] [options]
@@ -42,7 +45,7 @@ if /I "%~1"=="help" (
     echo   all_in_one_setup_and_train.bat 10000 strategic true true
     echo   all_in_one_setup_and_train.bat 10000 strategic true false "models/strategic/checkpoint_500000"
     echo.
-    @REM exit /b 0
+    exit /b 0
 )
 
 REM Process command line arguments
@@ -97,107 +100,46 @@ echo Anaconda is installed.
 REM ======== STEP 2: Create and Setup Conda Environment ========
 echo.
 echo Step 2: Setting up Conda environment...
-REM Check if environment exists
-call conda env list | findstr "cs2_agent" > nul
-if errorlevel 1 (
-    echo Creating new cs2_agent conda environment...
-    call conda create -y -n cs2_agent python=3.10
-    if errorlevel 1 (
-        echo ERROR: Failed to create conda environment
-        pause
-        exit /b 1
-    )
-) else (
-    echo Conda environment 'cs2_agent' already exists, will use it.
-)
-
-REM Activate the environment
-echo Activating conda environment...
-call conda activate cs2_agent
-if errorlevel 1 (
-    echo ERROR: Failed to activate conda environment
-    pause
-    exit /b 1
-)
+REM Use the activate_conda function which handles environment checking and activation
+call :activate_conda
 
 REM ======== STEP 3: Install Required Packages ========
 echo.
 echo Step 3: Installing required packages...
-REM Upgrade pip
-call python -m pip install --upgrade pip
-
-REM Install core ML libraries without version constraints using conda
-echo Installing conda packages...
-call conda install -y -c conda-forge "pytorch" "tensorflow" "gymnasium" "optuna" "numpy" "pandas" "matplotlib" "seaborn" "tensorboard" "pyyaml" "tqdm" "pytest" "jupyter" "requests" "pillow"
-if errorlevel 1 (
-    echo WARNING: Some conda packages may have failed to install.
-    choice /c YN /m "Continue with installation? (Y/N)"
-    if errorlevel 2 exit /b 1
-)
-
-REM Install pip packages that might not be available in conda
-echo Installing pip packages...
-call pip install stable-baselines3>=2.0.0 pytesseract pywin32 pyautogui mss keyboard pygame pydirectinput pynput opencv-python ray
-if errorlevel 1 (
-    echo WARNING: Some pip packages may have failed to install.
-    choice /c YN /m "Continue with installation? (Y/N)"
-    if errorlevel 2 exit /b 1
-)
-
-REM Install PyTorch with CUDA support
-echo Installing PyTorch with CUDA support...
-call pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-if errorlevel 1 (
-    echo WARNING: Failed to install PyTorch with CUDA support.
-    choice /c YN /m "Continue with installation? (Y/N)"
-    if errorlevel 2 exit /b 1
-)
-
-REM Install TensorFlow with compatible version
-echo Installing TensorFlow...
-call pip install tensorflow==2.13.0
-if errorlevel 1 (
-    echo WARNING: Failed to install TensorFlow.
-    choice /c YN /m "Continue with installation? (Y/N)"
-    if errorlevel 2 exit /b 1
-)
+REM Use the check_dependencies function to avoid redundant installations
+call :check_dependencies "requirements.txt"
 
 REM ======== STEP 4: Check GPU Support ========
 echo.
 echo Step 4: Setting up GPU support...
-REM Check NVIDIA GPU
-nvidia-smi > nul 2>&1
-if errorlevel 1 (
+REM Setup GPU environment variables
+call :setup_gpu
+
+REM Detect GPU with caching
+call :detect_gpu
+
+if "%GPU_AVAILABLE%"=="1" (
+    echo NVIDIA GPU detected with CUDA version %CUDA_VERSION%
+    echo Configuring for GPU acceleration...
+    set GPU_CMD=python setup_gpu.py
+    call :error_handler "%GPU_CMD%" 2
+) else (
     echo WARNING: NVIDIA GPU not detected or driver issue.
     echo Training will use CPU only, which will be much slower.
     echo If you have an NVIDIA GPU, please install the latest drivers.
-) else (
-    echo NVIDIA GPU detected, configuring for GPU acceleration...
-    python setup_gpu.py
 )
 
 REM ======== STEP 5: Check Ollama ========
 echo.
 echo Step 5: Checking if Ollama is running...
-curl -s http://localhost:11434/api/tags > nul
-if errorlevel 1 (
-    echo ERROR: Ollama is not running. Please start Ollama first.
-    echo You can download Ollama from: https://ollama.ai/
-    echo After installation, run: ollama serve
-    pause
-    exit /b 1
-)
+call :check_ollama
 
 echo Checking if required model is available...
 curl -s http://localhost:11434/api/tags | findstr "llama3.2-vision" > nul
 if errorlevel 1 (
     echo Downloading Llama3.2 Vision model...
-    curl -X POST http://localhost:11434/api/pull -d "{\"name\":\"llama3.2-vision:latest\"}"
-    if errorlevel 1 (
-        echo ERROR: Failed to download vision model.
-        pause
-        exit /b 1
-    )
+    set PULL_CMD=curl -X POST http://localhost:11434/api/pull -d "{\"name\":\"llama3.2-vision:latest\"}"
+    call :error_handler "%PULL_CMD%" 3
 ) else (
     echo Llama vision model already installed.
 )
@@ -209,12 +151,8 @@ curl -s -X POST http://localhost:11434/api/generate -d "{\"model\":\"llama3.2-vi
 REM ======== STEP 6: Check Directory Structure ========
 echo.
 echo Step 6: Checking directory structure...
-python check_directories.py
-if errorlevel 1 (
-    echo ERROR: Directory structure check failed.
-    pause
-    exit /b 1
-)
+set DIR_CHECK_CMD=python check_directories.py
+call :error_handler "%DIR_CHECK_CMD%" 2
 
 REM ======== Create Required Directories ========
 echo.
@@ -230,28 +168,16 @@ echo.
 echo Step 7: Running environment tests...
 
 echo Testing configuration...
-python test_config.py config/discovery_config.yaml
-if errorlevel 1 (
-    echo Configuration test failed. Please fix the issues before running training.
-    pause
-    exit /b 1
-)
+set CONFIG_TEST_CMD=python test_config.py config/discovery_config.yaml
+call :error_handler "%CONFIG_TEST_CMD%" 2
 
 echo Testing CS2Environment class...
-python test_cs2_env.py
-if errorlevel 1 (
-    echo CS2Environment test failed. Please fix the errors before running training.
-    pause
-    exit /b 1
-)
+set ENV_TEST_CMD=python test_cs2_env.py
+call :error_handler "%ENV_TEST_CMD%" 2
 
 echo Testing DiscoveryEnvironment class...
-python test_discovery_env.py
-if errorlevel 1 (
-    echo DiscoveryEnvironment test failed. Please fix the errors before running training.
-    pause
-    exit /b 1
-)
+set DISC_ENV_TEST_CMD=python test_discovery_env.py
+call :error_handler "%DISC_ENV_TEST_CMD%" 2
 
 REM ======== STEP 8: Start Training ========
 echo.
@@ -265,46 +191,44 @@ timeout /t 5
 echo Starting %MODE% training...
 
 REM Handle different training modes
+set TRAIN_CMD=
+
 if /I "%MODE%"=="discovery" (
     if /I "%FOCUS%"=="true" (
-        python train_discovery.py --config config/discovery_config.yaml --timesteps %TIMESTEPS% --focus
+        set TRAIN_CMD=python train_discovery.py --config config/discovery_config.yaml --timesteps %TIMESTEPS% --focus
     ) else (
-        python train_discovery.py --config config/discovery_config.yaml --timesteps %TIMESTEPS%
+        set TRAIN_CMD=python train_discovery.py --config config/discovery_config.yaml --timesteps %TIMESTEPS%
     )
 ) else if /I "%MODE%"=="tutorial" (
-    python train_tutorial_guided.py --config config/tutorial_guided_config.yaml --timesteps %TIMESTEPS%
+    set TRAIN_CMD=python train_tutorial_guided.py --config config/tutorial_guided_config.yaml --timesteps %TIMESTEPS%
 ) else if /I "%MODE%"=="vision" (
-    python train_vision_guided.py --config config/vision_guided_config.yaml --timesteps %TIMESTEPS%
+    set TRAIN_CMD=python train_vision_guided.py --config config/vision_guided_config.yaml --timesteps %TIMESTEPS%
 ) else if /I "%MODE%"=="autonomous" (
-    python train_autonomous.py --config config/autonomous_config.yaml --timesteps %TIMESTEPS%
+    set TRAIN_CMD=python train_autonomous.py --config config/autonomous_config.yaml --timesteps %TIMESTEPS%
 ) else if /I "%MODE%"=="adaptive" (
     if /I "%FOCUS%"=="true" (
-        python train_adaptive.py --config config/adaptive_config.yaml --timesteps %TIMESTEPS% --focus
+        set TRAIN_CMD=python train_adaptive.py --config config/adaptive_config.yaml --timesteps %TIMESTEPS% --focus
     ) else (
-        python train_adaptive.py --config config/adaptive_config.yaml --timesteps %TIMESTEPS%
+        set TRAIN_CMD=python train_adaptive.py --config config/adaptive_config.yaml --timesteps %TIMESTEPS%
     )
 ) else if /I "%MODE%"=="strategic" (
     REM Build command with options for strategic mode
-    set CMD=python train_strategic.py --timesteps %TIMESTEPS%
+    set TRAIN_CMD=python train_strategic.py --timesteps %TIMESTEPS%
     
     REM Add bootstrap flag if specified
     if /I "%BOOTSTRAP%"=="true" (
-        set CMD=!CMD! --knowledge-bootstrap
+        set TRAIN_CMD=!TRAIN_CMD! --knowledge-bootstrap
     )
     
     REM Add adaptive flag if specified
     if /I "%USE_ADAPTIVE%"=="true" (
-        set CMD=!CMD! --use-adaptive
+        set TRAIN_CMD=!TRAIN_CMD! --use-adaptive
     )
     
     REM Add checkpoint if specified
     if not "%CHECKPOINT%"=="" (
-        set CMD=!CMD! --load-checkpoint "%CHECKPOINT%"
+        set TRAIN_CMD=!TRAIN_CMD! --load-checkpoint "%CHECKPOINT%"
     )
-    
-    REM Execute the command
-    echo Running command: !CMD!
-    !CMD!
 ) else (
     echo Unknown mode: %MODE%
     echo Valid modes are: discovery, tutorial, vision, autonomous, adaptive, strategic
@@ -312,15 +236,26 @@ if /I "%MODE%"=="discovery" (
     exit /b 1
 )
 
+REM Execute the training command with error handling
+echo Running command: !TRAIN_CMD!
+call :error_handler "!TRAIN_CMD!" 3
+
+REM Set high priority for Python processes
+call :set_high_priority "python.exe"
+
+REM Clean up temporary files
+call :cleanup_temp "temp_*.*"
+
 echo.
 if %ERRORLEVEL% equ 0 (
     echo Training completed successfully!
 ) else (
-    echo Training encountered an error. Please check the logs for more information.
+    echo Training encountered an error. Please check error_log.txt for more information.
 )
 
 echo.
 echo ======================================================
 echo All-in-One Setup and Training Completed
 echo ======================================================
-pause 
+pause
+endlocal 
