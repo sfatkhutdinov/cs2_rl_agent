@@ -381,7 +381,7 @@ META PROMPT FOR DOCUMENTATION WORK:
 
 -->
 
-*Last updated: March 14, 2025 20:28 - Added codebase mindmap documentation*
+*Last updated: March 13, 2025 20:41 - Added batch script optimization documentation reference*
 
 ## Overview
 This directory contains a comprehensive analysis of the CS2 reinforcement learning agent codebase, organized by component type. This main file serves as an index to navigate the detailed analyses in subdirectories.
@@ -443,6 +443,7 @@ For a complete overview of all findings and strategic recommendations, see:
 - [Component Relationship Visualization](visualization/component_relationships.md) - Visual maps of system components and their relationships
 - [Link Checker](tools/link_checker_docs.md) - Tool for validating document links and maintaining navigation integrity
 - [Batch Scripts Reference](tools/batch_scripts_reference.md) - Comprehensive guide to batch scripts and their usage
+- [Batch Script Optimizations](tools/batch_script_optimizations.md) - Documentation of batch script performance improvements
 - [Cursor Project Rules](../cursor_project_rules.md) - Project-specific guidelines for maintaining consistent documentation
 
 ## Completed Analyses
@@ -475,6 +476,7 @@ The following analyses have been completed and can be accessed:
 - [Parallel Vision Processor Implementation](performance/parallel_vision_implementation.md) ✓
 - [Bridge Protocol Optimization](performance/bridge_optimization.md) ✓
 - [TensorFlow Compatibility Fixes](training/adaptive_agent_training.md#tensorflow-compatibility-issues) ✓
+- [Batch Script Optimizations](tools/batch_script_optimizations.md) ✓
 
 ## Analyses in Progress
 The following analyses are currently in progress:

@@ -1,23 +1,23 @@
 @echo off
+setlocal EnableDelayedExpansion
+
 echo Training Adaptive CS2 RL Agent
 echo --------------------------------
 
 REM Set Python path to include the project root
 set PYTHONPATH=%~dp0..\..
 
-REM Activate conda environment
-call conda activate cs2_agent
+REM Include common functions library
+call %~dp0..\utils\common_functions.bat
+
+REM Activate conda environment (only if needed)
+call :activate_conda
 
 REM Check if Ollama is running
-echo Checking if Ollama is running...
-curl -s http://localhost:11434/api/tags > nul
-if %ERRORLEVEL% NEQ 0 (
-    echo ERROR: Ollama is not running. Please start Ollama first.
-    echo You can download Ollama from: https://ollama.ai/
-    echo After installation, run: ollama serve
-    pause
-    exit /b 1
-)
+call :check_ollama
+
+REM Setup GPU environment
+call :setup_gpu
 
 REM Process command line arguments
 set TIMESTEPS=10000
@@ -36,9 +36,22 @@ echo IMPORTANT: Make sure Cities: Skylines 2 is running and visible on your scre
 echo The training will begin in 5 seconds.
 timeout /t 5
 
-REM Run the adaptive training script
-python ..\..\training\train_adaptive.py --timesteps %TIMESTEPS% %FOCUS% --starting-mode %STARTING_MODE% %EXTRA_ARGS%
+REM Run the adaptive training script with error handling
+set TRAINING_CMD=python ..\..\training\train_adaptive.py --timesteps %TIMESTEPS% %FOCUS% --starting-mode %STARTING_MODE% %EXTRA_ARGS%
+call :error_handler "%TRAINING_CMD%" 3
+
+REM Set high priority for the Python process
+call :set_high_priority "python.exe" 
 
 echo.
-echo Training complete!
-pause 
+if %ERRORLEVEL%==0 (
+    echo Training completed successfully!
+) else (
+    echo Training completed with errors. Check error_log.txt for details.
+)
+
+REM Clean up temporary files
+call :cleanup_temp "temp_adaptive_*.txt"
+
+pause
+endlocal 
