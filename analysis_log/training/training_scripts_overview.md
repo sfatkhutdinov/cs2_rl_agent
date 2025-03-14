@@ -1,6 +1,6 @@
 # Training Scripts Overview
 
-*Last updated: March 13, 2025 20:20 - Added batch file analysis and TensorFlow compatibility improvements*
+*Last updated: March 13, 2025 21:14 - Updated to reflect streamlined architecture with adaptive agent as primary orchestrator*
 
 **Tags:** #training #architecture #comparison #summary #batch #tensorflow
 
@@ -22,19 +22,19 @@ This analysis was performed by examining:
 
 ### Training Script Classification
 
-The CS2 RL agent includes several distinct training scripts, each with a specific focus:
+The CS2 RL agent's training architecture has been streamlined to focus on the adaptive agent as the primary orchestrator:
 
-1. **Basic Training Scripts**
-   - `train_discovery.py` - Focuses on UI element discovery and basic interactions
-   - `train_tutorial_guided.py` - Focuses on learning through guided tutorials
-   - `train_vision_guided.py` - Emphasizes visual interpretation training
+1. **Primary Training Script**
+   - `train_adaptive.py` - Integrates all training modes with dynamic switching, serving as the central training mechanism
 
-2. **Advanced Training Scripts**
-   - `train_autonomous.py` - Trains for independent gameplay with minimal guidance
-   - `train_strategic.py` - Focuses on high-level strategic decision-making
+2. **Specialized Agent Modes** (now orchestrated by the adaptive agent)
+   - Discovery Mode - Focuses on UI element discovery and basic interactions
+   - Tutorial Mode - Focuses on learning through guided tutorials
+   - Vision Mode - Emphasizes visual interpretation training
+   - Autonomous Mode - Trains for independent gameplay with minimal guidance
+   - Strategic Mode - Focuses on high-level strategic decision-making
 
-3. **Meta-Training Scripts**
-   - `train_adaptive.py` - Integrates all training modes with dynamic switching
+This streamlined approach eliminates the need for separate training pipelines while maintaining the full functionality of all specialized agent types.
 
 ### Comparison of Training Approaches
 
@@ -66,21 +66,36 @@ However, the specific implementation varies based on the training focus:
 - **Strategic training** emphasizes long-term planning and complex goal structures
 - **Adaptive training** orchestrates all of these approaches dynamically
 
+### Centralized Training Architecture
+
+The training architecture has been streamlined to focus on the adaptive agent as the central orchestrator. Key aspects of this architecture include:
+
+1. **Single Training Entry Point**: `train_adaptive.py` serves as the unified entry point for all training
+2. **Dynamic Agent Mode Selection**: The adaptive agent dynamically switches between specialized modes
+3. **Knowledge Transfer Between Modes**: Learning from one mode is transferred to other modes
+4. **Streamlined Deployment**: Simplified deployment scripts focus on the adaptive agent
+
+This centralized approach offers several benefits:
+- Reduced redundancy in training code
+- Simplified maintenance and updates
+- Improved knowledge sharing between agent modes
+- More cohesive learning progression
+- Streamlined deployment and configuration
+
 ### Batch Files for Training Execution
 
-The project uses batch files to simplify the training process by handling environment setup, dependency verification, and script execution. Key batch files include:
+The project has streamlined its batch files to focus on the adaptive agent as the primary orchestrator:
 
-1. **Standard Training Batch Files**
-   - `scripts/training/train_adaptive.bat` - Runs adaptive agent training
-   - `scripts/training/train_discovery.bat` - Runs discovery agent training
-   - `scripts/training/train_strategic.bat` - Runs strategic agent training
-
-2. **All-in-One Setup and Training**
-   - `scripts/deployment/all_in_one_setup_and_train.bat` - Comprehensive script that handles environment setup, dependency installation, and training initiation
-
-3. **Enhanced Compatibility Batch Files**
+1. **Primary Training Batch Files**
+   - `scripts/training/train_adaptive.bat` - Runs the adaptive agent training
    - `scripts/training/run_adaptive_fixed.bat` - Improved batch file with TensorFlow compatibility fixes
-   
+
+2. **Streamlined Deployment Scripts**
+   - `scripts/deployment/all_in_one_setup_and_train.bat` - Comprehensive script for setup and training
+   - `scripts/deployment/run_adaptive_agent.bat` - Focused deployment script for the adaptive agent
+
+This simplification removes the complexity of managing multiple training scripts while preserving full functionality through the adaptive agent's orchestration capabilities.
+
 ### TensorFlow Compatibility Improvements
 
 To address issues with TensorFlow compatibility, particularly the AttributeError related to the missing `tf.io` module, we implemented the following improvements:
@@ -104,31 +119,31 @@ These improvements ensure that the training scripts run correctly despite versio
 
 The training scripts integrate with:
 
-1. **Agent Module**: Each training script initializes and uses a specific agent type
-2. **Environment Module**: Training scripts configure and interact with specific environment implementations
+1. **Agent Module**: The adaptive agent initializes and orchestrates all specialized agent types
+2. **Environment Module**: The adaptive agent configures and interacts with specific environment implementations as needed
 3. **Configuration System**: Scripts load and apply configuration settings
 4. **Callback System**: Integration of monitoring, logging, and checkpoint capabilities
 
 ## Optimization Opportunities
 
-1. **Unified Training Interface**: Develop a more consistent API across all training scripts
-2. **Configuration Standardization**: Standardize configuration parameters and naming conventions
+1. **Further Unification**: Continue streamlining the configuration and interface for all agent modes
+2. **Enhanced Knowledge Transfer**: Improve the sharing of learned information between agent modes
 3. **Improved Progress Monitoring**: Implement more sophisticated visualization of training progress
-4. **Enhanced Integration Testing**: Develop tests for training script interactions
-5. **Documentation Improvements**: Better document the relationships between different training approaches
+4. **Enhanced Integration Testing**: Develop tests for adaptive agent mode switching and orchestration
+5. **Documentation Improvements**: Better document the relationships between different agent modes
 
 ## Next Steps
 
 Further investigation should focus on:
 
-1. Analyzing the performance differences between different training approaches
+1. Analyzing the performance metrics for adaptive agent mode switching
 2. Documenting the environment implementations in detail
-3. Exploring the integration between training scripts and the evaluation system
-4. Creating a visual diagram of the relationships between different training approaches
+3. Exploring the knowledge transfer mechanisms between agent modes
+4. Creating a visual diagram of the adaptive agent orchestration process
 
 ## References
 
 - [Adaptive Agent Training](adaptive_agent_training.md) - Detailed analysis of the adaptive training approach
-- [Strategic Agent Training](strategic_agent_training.md) - Detailed analysis of the strategic training approach
-- [Discovery-Based Training](discovery_training.md) - Detailed analysis of the discovery-based training approach
-- [Training Architecture](../architecture/comprehensive_architecture.md) - Overall architecture of the training system 
+- [Adaptive Agent System](../components/adaptive_agent.md) - Analysis of the adaptive agent implementation
+- [Adaptive Agent Orchestration](../architecture/adaptive_orchestration.md) - Overview of the orchestration architecture
+- [Training Architecture](../architecture/comprehensive_architecture.md) - Overall architecture of the training system

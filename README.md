@@ -75,12 +75,16 @@ cs2_rl_agent/
 
 To train the agent, use one of the following scripts:
 
-- **Adaptive Agent**: `scripts/training/train_adaptive.bat`
-- **Strategic Agent**: `scripts/training/train_strategic.bat`
-- **Discovery Mode**: `scripts/training/train_discovery.bat`
-- **Vision-Guided**: `scripts/training/train_vision_guided.bat`
-- **Tutorial-Guided**: `scripts/training/train_tutorial_guided.bat`
-- **Autonomous**: `scripts/training/train_autonomous.bat`
+- **Adaptive Agent**: `scripts/training/train_adaptive.bat` - Primary training script (recommended)
+
+The adaptive agent serves as the central orchestrator that manages all specialized agent types:
+- Discovery Mode
+- Tutorial Mode
+- Vision Mode
+- Autonomous Mode
+- Strategic Mode
+
+This centralized approach eliminates the need for separate training pipelines while maintaining the full functionality of all specialized agent types.
 
 ## Testing
 
@@ -95,9 +99,10 @@ To test the agent, use one of the following scripts:
 
 For deployment, use one of the following scripts:
 
-- **All-in-One Setup and Train**: `scripts/deployment/all_in_one_setup_and_train.bat`
-- **Run Discovery Agent**: `scripts/deployment/run_discovery_agent.bat`
-- **Run All Simple**: `scripts/deployment/run_all_simple.bat`
+- **All-in-One Setup and Train**: `scripts/deployment/all_in_one_setup_and_train.bat` - Complete setup and training
+- **Run Adaptive Agent**: `scripts/deployment/run_adaptive_agent.bat` - Focused deployment script
+
+These streamlined deployment scripts provide a simplified interface while maintaining full functionality through the adaptive agent's orchestration capabilities.
 
 ## Documentation
 
