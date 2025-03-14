@@ -1,6 +1,6 @@
 # Batch Script Optimization Documentation
 
-*Last updated: March 13, 2025 20:47 - Updated with additional optimized scripts*
+*Last updated: March 13, 2025 20:49 - Updated with additional optimized scripts*
 
 **Tags:** #tools #optimization #batch #documentation
 
@@ -115,13 +115,80 @@ Improvements:
 - Improved status reporting
 - Enhanced documentation of installed components
 
+### March 13, 2025 20:49 - Training and Utility Scripts Optimization
+
+**Optimized `scripts/training/train_discovery_with_focus.bat`**
+
+Improvements:
+- Completely restructured with common functions integration
+- Added parameter handling with help command
+- Implemented proper environment activation
+- Added model availability checking and installation
+- Added error handling with automatic retry
+- Enhanced directory structure verification
+- Added process priority management
+- Added temporary file cleanup
+- Improved error reporting and user guidance
+
+**Optimized `scripts/training/train_tutorial_guided.bat`**
+
+Improvements:
+- Replaced virtual environment handling with conda environment
+- Added parameter handling with timesteps and focus options
+- Added proper error handling for all operations
+- Added process priority optimization
+- Added automatic model installation if needed
+- Implemented proper directory structure creation
+- Added better status reporting
+- Enhanced error reporting and verification
+
+**Optimized `scripts/training/train_vision_guided.bat`**
+
+Improvements:
+- Restructured to use common functions
+- Added parameter handling and help command
+- Added proper GPU setup and detection
+- Added model availability checking
+- Enhanced error handling and recovery
+- Added process priority optimization
+- Added directory structure verification
+- Improved status reporting and guidance
+
+**Optimized `scripts/utils/enable_gpu.bat`**
+
+Improvements:
+- Added parameter handling with force reinstall option
+- Enhanced GPU environment variable setup
+- Added proper GPU detection with caching
+- Added dependency installation caching
+- Implemented better error handling for all operations
+- Enhanced verification of GPU detection
+- Improved diagnostic reporting
+- Added better guidance for troubleshooting
+
+**Optimized `scripts/utils/setup_ollama.bat`**
+
+Improvements:
+- Added model selection parameter
+- Enhanced model installation process
+- Added model verification and warm-up
+- Implemented error handling with automatic retry
+- Added model functionality testing
+- Added available models reporting
+- Enhanced user guidance and next steps
+- Improved status reporting
+
 ### Planned Optimizations
 
 The following scripts will be optimized next:
 
-1. Remaining training scripts (train_discovery_with_focus.bat, train_tutorial_guided.bat, etc.)
-2. Remaining utility scripts (enable_gpu.bat, setup_ollama.bat, etc.)
-3. Testing scripts (test_cs2_env.bat, test_ollama.bat, etc.)
+1. Testing scripts:
+   - `test_cs2_env.bat`
+   - `test_ollama.bat`
+   - `test_discovery_env.bat`
+
+2. Other deployment scripts:
+   - `run_all_simple.bat`
 
 ## Implementation Approach
 

@@ -1,4 +1,4 @@
-# CS2 Reinforcement Learning Agent Analysis Log
+# Cities: Skylines 2 Reinforcement Learning Agent Analysis Log
 
 <!-- 
 META PROMPT FOR DOCUMENTATION WORK:
