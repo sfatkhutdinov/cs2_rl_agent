@@ -1,0 +1,212 @@
+[1mdiff --git a/analysis_log/architecture/codebase_mindmap.md b/analysis_log/architecture/codebase_mindmap.md[m
+[1mindex 9ff2575..208bc04 100644[m
+[1m--- a/analysis_log/architecture/codebase_mindmap.md[m
+[1m+++ b/analysis_log/architecture/codebase_mindmap.md[m
+[36m@@ -1,6 +1,6 @@[m
+ # CS2 RL Agent Codebase Structure and Dependencies[m
+ [m
+[31m-*Last updated: March 14, 2025 20:28 - Created initial codebase mindmap*[m
+[32m+[m[32m*Last updated: March 13, 2025 20:31 - Updated mindmap with adaptive agent and fixed references*[m
+ [m
+ **Tags:** #architecture #documentation #codebase #reference[m
+ [m
+[36m@@ -17,10 +17,21 @@[m [mThis document provides a comprehensive mindmap of the CS2 RL Agent codebase, sho[m
+     - `src.agent.vision_agent`[m
+     - `src.agent.autonomous_agent`[m
+     - `src.agent.strategic_agent`[m
+[32m+[m[32m    - `src.agent.adaptive_agent`[m
+   - **Used by:** [m
+     - `training/train_*.py` scripts[m
+     - Environment implementations[m
+ [m
+[32m+[m[32m- **`adaptive_agent.py`**[m
+[32m+[m[32m  - **Imports:**[m[41m [m
+[32m+[m[32m    - `src.utils.logger`[m
+[32m+[m[32m    - `src.environment.cs2_env`[m
+[32m+[m[32m    - `src.utils.patch_tensorflow`[m
+[32m+[m[32m  - **Used by:**[m[41m [m
+[32m+[m[32m    - `training/train_adaptive.py`[m
+[32m+[m[32m    - `scripts/training/train_adaptive.bat`[m
+[32m+[m[32m    - `scripts/training/run_adaptive_fixed.bat`[m
+[32m+[m
+ - **`discovery_agent.py`**[m
+   - **Imports:** [m
+     - `src.environment.discovery_env`[m
+[36m@@ -45,6 +56,28 @@[m [mThis document provides a comprehensive mindmap of the CS2 RL Agent codebase, sho[m
+     - `training/train_autonomous.py`[m
+     - `scripts/training/train_autonomous.bat`[m
+ [m
+[32m+[m[32m- **`vision_agent.py`**[m
+[32m+[m[32m  - **Imports:**[m[41m [m
+[32m+[m[32m    - `src.utils.logger`[m
+[32m+[m[32m    - `src.environment.cs2_env`[m
+[32m+[m[32m  - **Used by:**[m[41m [m
+[32m+[m[32m    - `training/train_vision_guided.py`[m
+[32m+[m[32m    - `scripts/training/train_vision_guided.bat`[m
+[32m+[m
+[32m+[m[32m- **`tutorial_agent.py`**[m
+[32m+[m[32m  - **Imports:**[m[41m [m
+[32m+[m[32m    - `src.utils.logger`[m
+[32m+[m[32m    - `src.environment.cs2_env`[m
+[32m+[m[32m  - **Used by:**[m[41m [m
+[32m+[m[32m    - `training/train_tutorial_guided.py`[m
+[32m+[m[32m    - `scripts/training/train_tutorial_guided.bat`[m
+[32m+[m
+[32m+[m[32m- **`agent_factory.py`**[m
+[32m+[m[32m  - **Imports:**[m[41m [m
+[32m+[m[32m    - All agent implementations[m
+[32m+[m[32m  - **Used by:**[m[41m [m
+[32m+[m[32m    - Training scripts for dynamic agent instantiation[m
+[32m+[m
+ ### Environment Module (`src/environment/`)[m
+ - **`__init__.py`** - Exports environment classes[m
+   - **Imports:** [m
+[36m@@ -121,6 +154,7 @@[m [mThis document provides a comprehensive mindmap of the CS2 RL Agent codebase, sho[m
+   - **Used by:** [m
+     - `training/train_adaptive.py`[m
+     - `scripts/training/run_adaptive_fixed.bat`[m
+[32m+[m[32m    - `src.agent.adaptive_agent`[m
+ [m
+ ## Training Scripts[m
+ [m
+[36m@@ -163,6 +197,20 @@[m [mThis document provides a comprehensive mindmap of the CS2 RL Agent codebase, sho[m
+   - **Used by:** [m
+     - `scripts/training/train_autonomous.bat`[m
+ [m
+[32m+[m[32m- **`train_vision_guided.py`** - Vision-guided agent training[m
+[32m+[m[32m  - **Imports:**[m[41m [m
+[32m+[m[32m    - `src.agent.vision_agent`[m
+[32m+[m[32m    - `src.environment.cs2_env`[m
+[32m+[m[32m  - **Used by:**[m[41m [m
+[32m+[m[32m    - `scripts/training/train_vision_guided.bat`[m
+[32m+[m
+[32m+[m[32m- **`train_tutorial_guided.py`** - Tutorial agent training[m
+[32m+[m[32m  - **Imports:**[m[41m [m
+[32m+[m[32m    - `src.agent.tutorial_agent`[m
+[32m+[m[32m    - `src.environment.cs2_env`[m
+[32m+[m[32m  - **Used by:**[m[41m [m
+[32m+[m[32m    - `scripts/training/train_tutorial_guided.bat`[m
+[32m+[m
+ ### Batch Scripts (`scripts/training/`)[m
+ - **`train_adaptive.bat`**[m
+   - **Runs:** `training/train_adaptive.py`[m
+[36m@@ -189,6 +237,14 @@[m [mThis document provides a comprehensive mindmap of the CS2 RL Agent codebase, sho[m
+   - **Runs:** `training/train_autonomous.py`[m
+   - **Config:** `config/autonomous_config.yaml`[m
+ [m
+[32m+[m[32m- **`train_vision_guided.bat`**[m
+[32m+[m[32m  - **Runs:** `training/train_vision_guided.py`[m
+[32m+[m[32m  - **Config:** `config/vision_guided_config.yaml`[m
+[32m+[m
+[32m+[m[32m- **`train_tutorial_guided.bat`**[m
+[32m+[m[32m  - **Runs:** `training/train_tutorial_guided.py`[m
+[32m+[m[32m  - **Config:** `config/tutorial_guided_config.yaml`[m
+[32m+[m
+ ### Utility Scripts (`scripts/utils/`)[m
+ - **`setup_conda.bat`**[m
+   - **Used by:** All training and deployment scripts[m
+[36m@@ -248,6 +304,16 @@[m [mThis document provides a comprehensive mindmap of the CS2 RL Agent codebase, sho[m
+     - `training/train_autonomous.py`[m
+     - `scripts/training/train_autonomous.bat`[m
+ [m
+[32m+[m[32m- **`vision_guided_config.yaml`**[m
+[32m+[m[32m  - **Used by:**[m[41m [m
+[32m+[m[32m    - `training/train_vision_guided.py`[m
+[32m+[m[32m    - `scripts/training/train_vision_guided.bat`[m
+[32m+[m
+[32m+[m[32m- **`tutorial_guided_config.yaml`**[m
+[32m+[m[32m  - **Used by:**[m[41m [m
+[32m+[m[32m    - `training/train_tutorial_guided.py`[m
+[32m+[m[32m    - `scripts/training/train_tutorial_guided.bat`[m
+[32m+[m
+ ### JSON Configuration[m
+ - **`gpu_config.json`**[m
+   - **Used by:** [m
+[36m@@ -301,6 +367,76 @@[m [mThis document provides a comprehensive mindmap of the CS2 RL Agent codebase, sho[m
+ └─────────────────────┘                                   └─────────────────────┘[m
+ ```[m
+ [m
+[32m+[m[32m## Enhanced Visual Dependency Map[m
+[32m+[m
+[32m+[m[32mFor a more detailed representation, consider using a dedicated diagramming tool like [Mermaid](https://mermaid-js.github.io/) or [PlantUML](https://plantuml.com/) to create an interactive visualization that better represents the complex relationships between components.[m
+[32m+[m
+[32m+[m[32mExample PlantUML representation (for illustration - would need to be generated with proper tools):[m
+[32m+[m
+[32m+[m[32m```[m
+[32m+[m[32m@startuml[m
+[32m+[m[32mpackage "Agent Module" {[m
+[32m+[m[32m  [adaptive_agent.py][m
+[32m+[m[32m  [discovery_agent.py][m
+[32m+[m[32m  [strategic_agent.py][m
+[32m+[m[32m  [autonomous_agent.py][m
+[32m+[m[32m  [vision_agent.py][m
+[32m+[m[32m  [tutorial_agent.py][m
+[32m+[m[32m  [agent_factory.py][m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mpackage "Environment Module" {[m
+[32m+[m[32m  [cs2_env.py][m
+[32m+[m[32m  [discovery_env.py][m
+[32m+[m[32m  [autonomous_env.py][m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mpackage "Interface Module" {[m
+[32m+[m[32m  [auto_vision_interface.py][m
+[32m+[m[32m  [ollama_vision_interface.py][m
+[32m+[m[32m  [window_manager.py][m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mpackage "Utils Module" {[m
+[32m+[m[32m  [logger.py][m
+[32m+[m[32m  [patch_tensorflow.py][m
+[32m+[m[32m  [window_utils.py][m
+[32m+[m[32m  [file_utils.py][m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mpackage "Training Scripts" {[m
+[32m+[m[32m  [train.py][m
+[32m+[m[32m  [train_adaptive.py][m
+[32m+[m[32m  [train_discovery.py][m
+[32m+[m[32m  [train_strategic.py][m
+[32m+[m[32m  [train_autonomous.py][m
+[32m+[m[32m  [train_vision_guided.py][m
+[32m+[m[32m  [train_tutorial_guided.py][m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mpackage "Config Files" {[m
+[32m+[m[32m  [adaptive_config.yaml][m
+[32m+[m[32m  [discovery_config.yaml][m
+[32m+[m[32m  [strategic_config.yaml][m
+[32m+[m[32m  [autonomous_config.yaml][m
+[32m+[m[32m  [vision_guided_config.yaml][m
+[32m+[m[32m  [tutorial_guided_config.yaml][m
+[32m+[m[32m  [gpu_config.json][m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32m[adaptive_agent.py] --> [logger.py][m
+[32m+[m[32m[adaptive_agent.py] --> [cs2_env.py][m
+[32m+[m[32m[adaptive_agent.py] --> [patch_tensorflow.py][m
+[32m+[m
+[32m+[m[32m[train_adaptive.py] --> [adaptive_agent.py][m
+[32m+[m[32m[train_adaptive.py] --> [patch_tensorflow.py][m
+[32m+[m
+[32m+[m[32m[adaptive_config.yaml] --> [train_adaptive.py][m
+[32m+[m
+[32m+[m[32m' Additional relationships would be defined here...[m
+[32m+[m[32m@enduml[m
+[32m+[m[32m```[m
+[32m+[m
+ ## Key Dependency Patterns[m
+ [m
+ 1. **Training Pipeline Flow:**[m
+[36m@@ -335,4 +471,7 @@[m [mThis structure allows for independent development and testing of components whil[m
+ - [Comprehensive Architecture](comprehensive_architecture.md)[m
+ - [Component Integration](component_integration.md)[m
+ - [Batch Scripts Reference](../tools/batch_scripts_reference.md)[m
+[31m-- [Training Scripts Overview](../training/training_scripts_overview.md) [m
+\ No newline at end of file[m
+[32m+[m[32m- [Training Scripts Overview](../training/training_scripts_overview.md)[m
+[32m+[m[32m- [Adaptive Agent Training](../training/adaptive_agent_training.md)[m
+[32m+[m[32m- [Strategic Agent Analysis](../components/strategic_agent.md)[m
+[32m+[m[32m- [Autonomous Environment Implementation](../environment/autonomous_environment.md)[m[41m [m
+\ No newline at end of file[m

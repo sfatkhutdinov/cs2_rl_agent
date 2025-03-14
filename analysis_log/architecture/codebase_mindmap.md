@@ -1,6 +1,6 @@
 # CS2 RL Agent Codebase Structure and Dependencies
 
-*Last updated: March 14, 2025 20:28 - Created initial codebase mindmap*
+*Last updated: March 13, 2025 20:31 - Updated mindmap with adaptive agent and fixed references*
 
 **Tags:** #architecture #documentation #codebase #reference
 
@@ -17,9 +17,20 @@ This document provides a comprehensive mindmap of the CS2 RL Agent codebase, sho
     - `src.agent.vision_agent`
     - `src.agent.autonomous_agent`
     - `src.agent.strategic_agent`
+    - `src.agent.adaptive_agent`
   - **Used by:** 
     - `training/train_*.py` scripts
     - Environment implementations
+
+- **`adaptive_agent.py`**
+  - **Imports:** 
+    - `src.utils.logger`
+    - `src.environment.cs2_env`
+    - `src.utils.patch_tensorflow`
+  - **Used by:** 
+    - `training/train_adaptive.py`
+    - `scripts/training/train_adaptive.bat`
+    - `scripts/training/run_adaptive_fixed.bat`
 
 - **`discovery_agent.py`**
   - **Imports:** 
@@ -44,6 +55,28 @@ This document provides a comprehensive mindmap of the CS2 RL Agent codebase, sho
   - **Used by:** 
     - `training/train_autonomous.py`
     - `scripts/training/train_autonomous.bat`
+
+- **`vision_agent.py`**
+  - **Imports:** 
+    - `src.utils.logger`
+    - `src.environment.cs2_env`
+  - **Used by:** 
+    - `training/train_vision_guided.py`
+    - `scripts/training/train_vision_guided.bat`
+
+- **`tutorial_agent.py`**
+  - **Imports:** 
+    - `src.utils.logger`
+    - `src.environment.cs2_env`
+  - **Used by:** 
+    - `training/train_tutorial_guided.py`
+    - `scripts/training/train_tutorial_guided.bat`
+
+- **`agent_factory.py`**
+  - **Imports:** 
+    - All agent implementations
+  - **Used by:** 
+    - Training scripts for dynamic agent instantiation
 
 ### Environment Module (`src/environment/`)
 - **`__init__.py`** - Exports environment classes
@@ -121,6 +154,7 @@ This document provides a comprehensive mindmap of the CS2 RL Agent codebase, sho
   - **Used by:** 
     - `training/train_adaptive.py`
     - `scripts/training/run_adaptive_fixed.bat`
+    - `src.agent.adaptive_agent`
 
 ## Training Scripts
 
@@ -163,6 +197,20 @@ This document provides a comprehensive mindmap of the CS2 RL Agent codebase, sho
   - **Used by:** 
     - `scripts/training/train_autonomous.bat`
 
+- **`train_vision_guided.py`** - Vision-guided agent training
+  - **Imports:** 
+    - `src.agent.vision_agent`
+    - `src.environment.cs2_env`
+  - **Used by:** 
+    - `scripts/training/train_vision_guided.bat`
+
+- **`train_tutorial_guided.py`** - Tutorial agent training
+  - **Imports:** 
+    - `src.agent.tutorial_agent`
+    - `src.environment.cs2_env`
+  - **Used by:** 
+    - `scripts/training/train_tutorial_guided.bat`
+
 ### Batch Scripts (`scripts/training/`)
 - **`train_adaptive.bat`**
   - **Runs:** `training/train_adaptive.py`
@@ -188,6 +236,14 @@ This document provides a comprehensive mindmap of the CS2 RL Agent codebase, sho
 - **`train_autonomous.bat`**
   - **Runs:** `training/train_autonomous.py`
   - **Config:** `config/autonomous_config.yaml`
+
+- **`train_vision_guided.bat`**
+  - **Runs:** `training/train_vision_guided.py`
+  - **Config:** `config/vision_guided_config.yaml`
+
+- **`train_tutorial_guided.bat`**
+  - **Runs:** `training/train_tutorial_guided.py`
+  - **Config:** `config/tutorial_guided_config.yaml`
 
 ### Utility Scripts (`scripts/utils/`)
 - **`setup_conda.bat`**
@@ -248,6 +304,16 @@ This document provides a comprehensive mindmap of the CS2 RL Agent codebase, sho
     - `training/train_autonomous.py`
     - `scripts/training/train_autonomous.bat`
 
+- **`vision_guided_config.yaml`**
+  - **Used by:** 
+    - `training/train_vision_guided.py`
+    - `scripts/training/train_vision_guided.bat`
+
+- **`tutorial_guided_config.yaml`**
+  - **Used by:** 
+    - `training/train_tutorial_guided.py`
+    - `scripts/training/train_tutorial_guided.bat`
+
 ### JSON Configuration
 - **`gpu_config.json`**
   - **Used by:** 
@@ -301,6 +367,76 @@ This document provides a comprehensive mindmap of the CS2 RL Agent codebase, sho
 └─────────────────────┘                                   └─────────────────────┘
 ```
 
+## Enhanced Visual Dependency Map
+
+For a more detailed representation, consider using a dedicated diagramming tool like [Mermaid](https://mermaid-js.github.io/) or [PlantUML](https://plantuml.com/) to create an interactive visualization that better represents the complex relationships between components.
+
+Example PlantUML representation (for illustration - would need to be generated with proper tools):
+
+```
+@startuml
+package "Agent Module" {
+  [adaptive_agent.py]
+  [discovery_agent.py]
+  [strategic_agent.py]
+  [autonomous_agent.py]
+  [vision_agent.py]
+  [tutorial_agent.py]
+  [agent_factory.py]
+}
+
+package "Environment Module" {
+  [cs2_env.py]
+  [discovery_env.py]
+  [autonomous_env.py]
+}
+
+package "Interface Module" {
+  [auto_vision_interface.py]
+  [ollama_vision_interface.py]
+  [window_manager.py]
+}
+
+package "Utils Module" {
+  [logger.py]
+  [patch_tensorflow.py]
+  [window_utils.py]
+  [file_utils.py]
+}
+
+package "Training Scripts" {
+  [train.py]
+  [train_adaptive.py]
+  [train_discovery.py]
+  [train_strategic.py]
+  [train_autonomous.py]
+  [train_vision_guided.py]
+  [train_tutorial_guided.py]
+}
+
+package "Config Files" {
+  [adaptive_config.yaml]
+  [discovery_config.yaml]
+  [strategic_config.yaml]
+  [autonomous_config.yaml]
+  [vision_guided_config.yaml]
+  [tutorial_guided_config.yaml]
+  [gpu_config.json]
+}
+
+[adaptive_agent.py] --> [logger.py]
+[adaptive_agent.py] --> [cs2_env.py]
+[adaptive_agent.py] --> [patch_tensorflow.py]
+
+[train_adaptive.py] --> [adaptive_agent.py]
+[train_adaptive.py] --> [patch_tensorflow.py]
+
+[adaptive_config.yaml] --> [train_adaptive.py]
+
+' Additional relationships would be defined here...
+@enduml
+```
+
 ## Key Dependency Patterns
 
 1. **Training Pipeline Flow:**
@@ -335,4 +471,7 @@ This structure allows for independent development and testing of components whil
 - [Comprehensive Architecture](comprehensive_architecture.md)
 - [Component Integration](component_integration.md)
 - [Batch Scripts Reference](../tools/batch_scripts_reference.md)
-- [Training Scripts Overview](../training/training_scripts_overview.md) 
+- [Training Scripts Overview](../training/training_scripts_overview.md)
+- [Adaptive Agent Training](../training/adaptive_agent_training.md)
+- [Strategic Agent Analysis](../components/strategic_agent.md)
+- [Autonomous Environment Implementation](../environment/autonomous_environment.md) 
