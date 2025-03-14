@@ -8,119 +8,114 @@ echo ======================================================
 REM Set working directory to script location
 cd /d "%~dp0"
 
-REM Setup environment variables
-set PYTHONPATH=%~dp0
-set CONFIG_FILE=config/discovery_config.yaml
+REM Include common functions library
+call %~dp0..\utils\common_functions.bat
+
+REM Check for help command
+if /I "%~1"=="help" (
+    echo Usage: run_all_simple.bat [timesteps] [mode]
+    echo.
+    echo Parameters:
+    echo   timesteps - Number of training timesteps (default: 1000)
+    echo   mode      - Training mode (default: goal)
+    echo              Valid options: goal, explore
+    echo.
+    echo Examples:
+    echo   run_all_simple.bat
+    echo   run_all_simple.bat 5000
+    echo   run_all_simple.bat 2000 explore
+    echo.
+    exit /b 0
+)
+
+REM Process command line arguments
 set TIMESTEPS=1000
 set MODE=goal
 
-REM Process command line arguments
 if not "%~1"=="" set TIMESTEPS=%~1
 if not "%~2"=="" set MODE=%~2
-echo Will train for %TIMESTEPS% timesteps in %MODE% mode
+
+echo Simple Agent Configuration:
+echo - Training timesteps: %TIMESTEPS%
+echo - Training mode: %MODE%
+
+REM ======== STEP 1: Check Python Environment ========
+echo.
+echo Checking Python environment...
+
+REM Setup configuration path
+set CONFIG_FILE=config/discovery_config.yaml
+set PYTHONPATH=%~dp0
+
+REM Activate conda environment (only if needed)
+call :activate_conda
+
+REM ======== STEP 2: Create Required Directories ========
+echo.
+echo Creating required directories...
 
 REM Create logs directory if it doesn't exist
 mkdir logs 2>nul
 mkdir logs\vision_debug 2>nul
+mkdir models 2>nul
+mkdir models\discovery 2>nul
+mkdir tensorboard 2>nul
+mkdir tensorboard\discovery 2>nul
 
-REM Check if virtual environment exists and activate it
-if exist venv\Scripts\activate.bat (
-    echo Activating virtual environment...
-    call conda activate cs2_agent
-)
+REM ======== STEP 3: Install Essential Dependencies ========
+echo.
+echo Checking dependencies...
 
-echo ======================================================
-echo STEP 1: Installing Essential Dependencies
-echo ======================================================
+REM Check dependencies with caching
+call :check_dependencies "requirements.txt"
 
-REM Install required dependencies
-echo Installing/updating required dependencies...
-pip install numpy opencv-python pyautogui pywin32 psutil pillow pytesseract mss --quiet
-pip install --upgrade Pillow --quiet
+REM ======== STEP 4: Setup GPU Environment ========
+echo.
+echo Setting up GPU environment...
 
-REM Direct installation of PyTorch with CUDA support
-echo Installing PyTorch with CUDA support...
-pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118 --quiet
+REM Setup GPU environment variables
+call :setup_gpu
 
-REM Install TensorFlow
-echo Installing TensorFlow...
-pip install tensorflow==2.13.0 --quiet
+REM Check for GPU with caching
+call :detect_gpu
 
-REM Install machine learning dependencies
-echo Installing machine learning dependencies...
-pip install stable-baselines3==2.1.0 tensorboard==2.13.0 gymnasium --quiet
-
-echo ======================================================
-echo STEP 2: Setting Up GPU Environment
-echo ======================================================
-
-REM Set environment variables for CUDA
-echo Setting environment variables for GPU...
-set CUDA_VISIBLE_DEVICES=0
-set TF_FORCE_GPU_ALLOW_GROWTH=true
-set TF_GPU_ALLOCATOR=cuda_malloc_async
-set PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
-
-REM Check for CUDA installation
-echo Checking for CUDA installation...
-nvidia-smi >nul 2>&1
-if %ERRORLEVEL% NEQ 0 (
-    echo WARNING: NVIDIA driver or CUDA installation issue detected.
-    echo Will continue with CPU mode.
-    echo.
+if "%GPU_AVAILABLE%"=="1" (
+    echo NVIDIA GPU detected with CUDA version %CUDA_VERSION%
+    echo Training will use GPU acceleration.
+    
+    REM Simple GPU setup
+    set GPU_CMD=python setup_gpu.py
+    call :error_handler "%GPU_CMD%" 2
 ) else (
-    echo NVIDIA drivers found: 
-    nvidia-smi | findstr "NVIDIA-SMI" 
-    nvidia-smi | findstr "Driver Version"
+    echo WARNING: No GPU detected or CUDA drivers not properly installed.
+    echo Training will proceed with CPU only (slower).
+    echo For GPU support, install NVIDIA drivers from: https://www.nvidia.com/Download/index.aspx
 )
 
-REM Create simple enable_cuda.py if it doesn't exist
-if not exist "enable_cuda.py" (
-    echo Creating simplified CUDA enabler...
-    echo import os > enable_cuda.py
-    echo import sys >> enable_cuda.py
-    echo # Set environment variables >> enable_cuda.py
-    echo os.environ["CUDA_VISIBLE_DEVICES"] = "0" >> enable_cuda.py
-    echo os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true" >> enable_cuda.py
-    echo try: >> enable_cuda.py
-    echo     import torch >> enable_cuda.py
-    echo     print(f"PyTorch CUDA available: {torch.cuda.is_available()}") >> enable_cuda.py
-    echo     if torch.cuda.is_available(): >> enable_cuda.py
-    echo         print(f"GPU Device: {torch.cuda.get_device_name(0)}") >> enable_cuda.py
-    echo except ImportError: >> enable_cuda.py
-    echo     print("PyTorch not installed") >> enable_cuda.py
-    echo try: >> enable_cuda.py
-    echo     import tensorflow as tf >> enable_cuda.py
-    echo     print(f"TensorFlow GPU devices: {tf.config.list_physical_devices('GPU')}") >> enable_cuda.py
-    echo except ImportError: >> enable_cuda.py
-    echo     print("TensorFlow not installed") >> enable_cuda.py
-)
-
-REM Verify GPU detection with PyTorch and TensorFlow
-echo Verifying GPU detection...
-python -c "import torch; print(f'PyTorch CUDA available: {torch.cuda.is_available()}'); print(f'GPU Device: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else \"None\"}')"
-python -c "import tensorflow as tf; print(f'TensorFlow GPU devices: {tf.config.list_physical_devices(\"GPU\")}')"
-
-echo ======================================================
-echo STEP 3: Checking Ollama Service
-echo ======================================================
-
-REM Check if Ollama is running and start it if needed
+REM ======== STEP 5: Check Ollama ========
+echo.
 echo Checking if Ollama is running...
-powershell -command "if (!(Get-Process -Name ollama -ErrorAction SilentlyContinue)) { echo 'Starting Ollama service...'; Start-Process 'ollama' -WindowStyle Minimized }"
+call :check_ollama
 
-REM Wait for Ollama to initialize
-echo Waiting for Ollama to initialize...
-timeout /t 5 > nul
+echo Checking if required model is available...
+curl -s http://localhost:11434/api/tags | findstr "granite3.2-vision" > nul
+if errorlevel 1 (
+    echo Downloading Granite 3.2 Vision model...
+    set PULL_CMD=curl -X POST http://localhost:11434/api/pull -d "{\"name\":\"granite3.2-vision:latest\"}"
+    call :error_handler "%PULL_CMD%" 3
+) else (
+    echo Granite vision model already installed.
+)
 
-REM Pull the required model if it doesn't exist
-echo Checking for granite3.2-vision model...
-powershell -command "$result = (ollama list 2>&1 | Select-String 'granite3.2-vision'); if(-not $result) { echo 'Pulling granite3.2-vision model...'; ollama pull granite3.2-vision:latest }"
+REM Warm up the vision model
+echo Warming up vision model...
+curl -s -X POST http://localhost:11434/api/generate -d "{\"model\":\"granite3.2-vision:latest\",\"prompt\":\"Hello, are you ready to analyze game screens?\",\"stream\":false}" > nul
 
-echo ======================================================
-echo STEP 4: Focusing Game Window
-echo ======================================================
+REM ======== STEP 6: Focus Game Window ========
+echo.
+echo Focusing game window...
 
+REM Attempt to focus the game window
 echo Attempting to focus game window...
 python enhanced_focus.py "Cities: Skylines II"
 if %ERRORLEVEL% NEQ 0 (
@@ -132,21 +127,39 @@ echo Waiting for the game to stabilize...
 echo TIP: If agent button presses don't register, try clicking manually in the game window once.
 timeout /t 5 > nul
 
-echo ======================================================
-echo STEP 5: Starting Agent Training
-echo ======================================================
+REM ======== STEP 7: Start Training ========
+echo.
+echo Starting agent training...
 
-REM Run the discovery agent training with appropriate mode
-echo Starting Discovery Agent Training...
+REM Build command with appropriate flags
 if /i "%MODE%"=="explore" (
     echo Running in exploration-focused mode
-    python train_discovery.py --config %CONFIG_FILE% --timesteps %TIMESTEPS% --exploration-focus
+    set TRAIN_CMD=python train_discovery.py --config %CONFIG_FILE% --timesteps %TIMESTEPS% --exploration-focus
 ) else (
     echo Running in city-building goal-oriented mode
-    python train_discovery.py --config %CONFIG_FILE% --timesteps %TIMESTEPS% --goal-focus
+    set TRAIN_CMD=python train_discovery.py --config %CONFIG_FILE% --timesteps %TIMESTEPS% --goal-focus
+)
+
+REM Run the training with error handling
+echo Running command: !TRAIN_CMD!
+call :error_handler "!TRAIN_CMD!" 3
+
+REM Set high priority for Python processes
+call :set_high_priority "python.exe"
+
+REM Clean up temporary files
+call :cleanup_temp "temp_discovery_*.txt"
+
+echo.
+if %ERRORLEVEL% equ 0 (
+    echo Training completed successfully!
+) else (
+    echo Training encountered an error.
+    echo Please check error_log.txt for more information.
 )
 
 echo ======================================================
 echo Training complete! Press any key to exit...
 echo ======================================================
-pause > nul 
+pause
+endlocal 

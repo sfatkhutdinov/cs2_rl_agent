@@ -1,6 +1,6 @@
 # Batch Script Optimization Documentation
 
-*Last updated: March 13, 2025 20:49 - Updated with additional optimized scripts*
+*Last updated: March 13, 2025 20:55 - Updated with testing scripts optimization*
 
 **Tags:** #tools #optimization #batch #documentation
 
@@ -178,21 +178,91 @@ Improvements:
 - Enhanced user guidance and next steps
 - Improved status reporting
 
-### Planned Optimizations
+### March 13, 2025 20:55 - Testing and Deployment Scripts Optimization
 
-The following scripts will be optimized next:
+**Optimized `scripts/testing/test_cs2_env.bat`**
 
-1. Testing scripts:
-   - `test_cs2_env.bat`
-   - `test_ollama.bat`
-   - `test_discovery_env.bat`
+Improvements:
+- Added proper integration with common functions library
+- Added parameter handling with help command and verbose option
+- Implemented proper environment activation
+- Added test environment initialization
+- Added error handling with automatic retry
+- Enhanced test result reporting
+- Added better guidance for test failures
+- Improved overall structure and organization
 
-2. Other deployment scripts:
-   - `run_all_simple.bat`
+**Optimized `scripts/testing/test_ollama.bat`**
+
+Improvements:
+- Implemented complete restructuring with common functions
+- Added parameter handling for model selection and verbose output
+- Added automatic model installation if needed
+- Added model verification before testing
+- Added proper test environment creation
+- Added error handling with automatic retry
+- Enhanced test result reporting
+- Added guidance for troubleshooting test failures
+
+**Optimized `scripts/testing/test_discovery_env.bat`**
+
+Improvements:
+- Added command line parameters for verbose output and window focus
+- Implemented Ollama verification and model installation
+- Added test environment directory creation
+- Enhanced command construction with flexible options
+- Added error handling with automatic retry
+- Improved test result reporting
+- Added better guidance for test failures
+- Added log file reference for troubleshooting
+
+**Optimized `scripts/deployment/run_all_simple.bat`**
+
+Improvements:
+- Completely restructured to use common functions
+- Eliminated redundant dependency installation code
+- Added caching for dependencies to prevent unnecessary installations
+- Enhanced GPU setup and detection with proper error handling
+- Added proper Ollama service verification and model installation
+- Improved command construction with flexible options
+- Added process priority optimization
+- Added temporary file cleanup
+- Enhanced error reporting and guidance
+- Improved overall script organization with clear section separation
+
+## Completion Status
+
+All planned batch script optimizations have been completed. The optimized scripts include:
+
+1. Common Functions Library:
+   - `scripts/utils/common_functions.bat`
+
+2. Training Scripts:
+   - `scripts/training/train_adaptive.bat`
+   - `scripts/training/train_strategic_agent.bat`
+   - `scripts/training/train_discovery_with_focus.bat`
+   - `scripts/training/train_tutorial_guided.bat`
+   - `scripts/training/train_vision_guided.bat`
+
+3. Utility Scripts:
+   - `scripts/utils/check_gpu.bat`
+   - `scripts/utils/setup_conda.bat`
+   - `scripts/utils/enable_gpu.bat`
+   - `scripts/utils/setup_ollama.bat`
+
+4. Deployment Scripts:
+   - `scripts/deployment/run_discovery_agent.bat`
+   - `scripts/deployment/all_in_one_setup_and_train.bat`
+   - `scripts/deployment/run_all_simple.bat`
+
+5. Testing Scripts:
+   - `scripts/testing/test_cs2_env.bat`
+   - `scripts/testing/test_ollama.bat`
+   - `scripts/testing/test_discovery_env.bat`
 
 ## Implementation Approach
 
-Each script optimization follows this process:
+Each script optimization followed this process:
 
 1. Analyze current functionality and identify optimization opportunities
 2. Replace redundant code with calls to common functions
@@ -246,3 +316,12 @@ All optimized scripts have been tested to ensure they maintain original function
 ## Conclusion
 
 The batch script optimizations have significantly improved the performance, maintainability, and resilience of the CS2 RL Agent scripts. By centralizing common functions and implementing consistent error handling, we've created a more robust system that is easier to maintain and extend. 
+
+Key achievements include:
+- Complete standardization of all batch scripts
+- Unified error handling and recovery approach
+- Consistent directory structure handling
+- Improved GPU utilization and detection
+- Enhanced dependency management with caching
+- Better user guidance and diagnostics
+- Comprehensive documentation of all optimizations 
