@@ -2,6 +2,9 @@
 echo Training Adaptive CS2 RL Agent
 echo --------------------------------
 
+REM Set Python path to include the project root
+set PYTHONPATH=%~dp0..\..
+
 REM Activate conda environment
 call conda activate cs2_agent
 
