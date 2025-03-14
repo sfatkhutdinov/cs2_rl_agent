@@ -391,6 +391,7 @@ For a complete overview of all findings and strategic recommendations, see:
 - [Comprehensive Synthesis: Key Findings and Strategic Insights](architecture/comprehensive_synthesis.md)
 - [Analysis Summary: High-level Overview of All Completed Analyses](analysis_summary.md)
 - [Development Roadmap: Strategic Plan for Future Enhancements](development_roadmap.md)
+- [Streamlined Architecture Verification](architecture/streamlined_architecture_verification.md)
 
 ## Directory Structure
 
@@ -402,6 +403,8 @@ For a complete overview of all findings and strategic recommendations, see:
 - [Strategic Agent Analysis](components/strategic_agent.md) - Advanced agent with causal modeling and goal inference
 - [Component Integration](architecture/component_integration.md) - How components interact as a system
 - [Configuration System](architecture/configuration_system.md) - Configuration system
+- [Adaptive Agent Orchestration](architecture/adaptive_orchestration.md) - How the adaptive agent orchestrates all specialized modes
+- [Streamlined Architecture Verification](architecture/streamlined_architecture_verification.md) - Verification of streamlined architecture implementation
 
 ### Environment Analysis
 - [Autonomous Environment Implementation](environment/autonomous_environment.md) - Environment with autonomous capabilities
@@ -433,9 +436,13 @@ For a complete overview of all findings and strategic recommendations, see:
 - [Testing Infrastructure Summary](testing/testing_infrastructure_summary.md) - Executive summary of testing approach
 - [Model Evaluation Methods](testing/model_evaluation.md) - How agent performance is assessed
 - [Deployment Processes](testing/deployment_processes.md) - How the system is deployed
+- [Adaptive Orchestration Testing](testing/adaptive_orchestration_testing.md) - Documentation of the adaptive orchestration test implementation
 
 ### Game State Understanding
 - [Reward Calculation](components/reward_calculation.md) - How game state is processed and rewards are calculated
+
+### Visualization System Analysis
+- [Adaptive Orchestration Diagram](visualization/adaptive_orchestration_diagram.md) - Visual representation of adaptive agent orchestration
 
 ## Reference Materials and Tools
 - [Glossary of Key Terms](glossary.md) - Definitions of specialized terminology used throughout the analysis
@@ -494,6 +501,9 @@ The following analyses have been completed and can be accessed:
 - [TensorFlow Compatibility Fixes](training/adaptive_agent_training.md#tensorflow-compatibility-issues) ✓
 - [Batch Script Optimizations](tools/batch_script_optimizations.md) ✓
 - [Adaptive Agent Orchestration](architecture/adaptive_orchestration.md) ✓
+- [Streamlined Architecture Verification](architecture/streamlined_architecture_verification.md) ✓
+- [Adaptive Orchestration Testing](testing/adaptive_orchestration_testing.md) ✓
+- [Adaptive Orchestration Diagram](visualization/adaptive_orchestration_diagram.md) ✓
 
 ## Analyses in Progress
 The following analyses are currently in progress:
