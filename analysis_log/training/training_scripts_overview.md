@@ -1,8 +1,8 @@
 # Training Scripts Overview
 
-*Last updated: 2024-03-13 - Initial creation of training scripts overview*
+*Last updated: March 13, 2025 20:20 - Added batch file analysis and TensorFlow compatibility improvements*
 
-**Tags:** #training #architecture #comparison #summary
+**Tags:** #training #architecture #comparison #summary #batch #tensorflow
 
 ## Context
 
@@ -15,6 +15,8 @@ This analysis was performed by examining:
 - The agent implementations they utilize
 - Their configuration files and command-line parameters
 - The relationships and dependencies between different training approaches
+- Batch files used to execute training scripts with proper environment setup
+- Compatibility fixes for dependencies like TensorFlow
 
 ## Findings
 
@@ -64,14 +66,39 @@ However, the specific implementation varies based on the training focus:
 - **Strategic training** emphasizes long-term planning and complex goal structures
 - **Adaptive training** orchestrates all of these approaches dynamically
 
-### Batch Script Integration
+### Batch Files for Training Execution
 
-Each Python training script is accompanied by one or more `.bat` scripts that:
-- Set up the appropriate environment variables
-- Configure paths and dependencies
-- Launch the training with default or customized parameters
+The project uses batch files to simplify the training process by handling environment setup, dependency verification, and script execution. Key batch files include:
 
-These batch scripts enable easier execution in Windows environments and provide standardized configuration for different training scenarios.
+1. **Standard Training Batch Files**
+   - `scripts/training/train_adaptive.bat` - Runs adaptive agent training
+   - `scripts/training/train_discovery.bat` - Runs discovery agent training
+   - `scripts/training/train_strategic.bat` - Runs strategic agent training
+
+2. **All-in-One Setup and Training**
+   - `scripts/deployment/all_in_one_setup_and_train.bat` - Comprehensive script that handles environment setup, dependency installation, and training initiation
+
+3. **Enhanced Compatibility Batch Files**
+   - `scripts/training/run_adaptive_fixed.bat` - Improved batch file with TensorFlow compatibility fixes
+   
+### TensorFlow Compatibility Improvements
+
+To address issues with TensorFlow compatibility, particularly the AttributeError related to the missing `tf.io` module, we implemented the following improvements:
+
+1. **TensorFlow Patch Utility**
+   - Created `src/utils/patch_tensorflow.py` to apply runtime patches to TensorFlow
+   - The patch adds a dummy `io` module with required functionality when missing
+
+2. **Enhanced Batch File**
+   - Created `scripts/training/run_adaptive_fixed.bat` with improved error handling
+   - Runs the TensorFlow patch before starting the training script
+   - Sets proper environment variables and verifies prerequisites
+
+3. **Training Script Integration**
+   - Updated `training/train_adaptive.py` to apply the TensorFlow patch early in the import process
+   - Added error handling for import and patch application failures
+
+These improvements ensure that the training scripts run correctly despite version mismatches between TensorFlow, PyTorch, and their dependencies.
 
 ## Relationship to Other Components
 

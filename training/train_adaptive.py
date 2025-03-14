@@ -7,8 +7,26 @@ training modes (discovery, tutorial, vision, autonomous) based on performance
 and game feedback.
 """
 
+# Fix path for imports
 import os
 import sys
+# Add the project root directory to the Python path
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(script_dir, '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+# Apply TensorFlow patch before importing other modules
+try:
+    from src.utils.patch_tensorflow import apply_tensorflow_io_patch
+    patch_applied = apply_tensorflow_io_patch()
+    if patch_applied:
+        print("Applied TensorFlow compatibility patch successfully")
+except ImportError:
+    print("WARNING: Could not import TensorFlow patch module")
+except Exception as e:
+    print(f"WARNING: Error applying TensorFlow patch: {e}")
+
 import time
 import json
 import yaml
@@ -24,6 +42,7 @@ from typing import Dict, Any, Optional
 from src.utils.observation_wrapper import FlattenObservationWrapper
 
 # Configure logging
+os.makedirs("logs", exist_ok=True)  # Ensure logs directory exists
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
