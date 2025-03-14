@@ -381,7 +381,7 @@ META PROMPT FOR DOCUMENTATION WORK:
 
 -->
 
-*Last updated: March 13, 2025 20:20 - Added TensorFlow compatibility fixes documentation*
+*Last updated: March 14, 2025 20:28 - Added codebase mindmap documentation*
 
 ## Overview
 This directory contains a comprehensive analysis of the CS2 reinforcement learning agent codebase, organized by component type. This main file serves as an index to navigate the detailed analyses in subdirectories.
@@ -396,6 +396,7 @@ For a complete overview of all findings and strategic recommendations, see:
 
 ### Architecture Analysis
 - [Comprehensive Codebase Architecture](architecture/comprehensive_architecture.md) - Complete system architecture overview
+- [Codebase Structure and Dependencies](architecture/codebase_mindmap.md) - Visual mindmap of file relationships and dependencies
 - [Action System and Feature Extraction](architecture/action_system.md) - How actions are executed and observations processed
 - [Adaptive Agent System](components/adaptive_agent.md) - Dynamic mode-switching agent implementation
 - [Strategic Agent Analysis](components/strategic_agent.md) - Advanced agent with causal modeling and goal inference
