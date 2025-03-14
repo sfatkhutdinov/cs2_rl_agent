@@ -88,12 +88,27 @@ This centralized approach eliminates the need for separate training pipelines wh
 
 ## Testing
 
-To test the agent, use one of the following scripts:
+The project includes comprehensive test scripts to verify functionality:
 
-- **CS2 Environment**: `scripts/testing/test_cs2_env.bat`
-- **Configuration**: `scripts/testing/test_config.bat`
-- **Discovery Environment**: `scripts/testing/test_discovery_env.bat`
-- **Adaptive Modes**: `scripts/testing/test_adaptive_modes.bat`
+- **Adaptive Orchestration Test**: `scripts/testing/test_adaptive_orchestration.bat` - Tests the adaptive agent's ability to switch between different modes
+- **Vision System Test**: `scripts/testing/test_vision_windows.bat` - Verifies the vision processing functionality
+- **Environment Test**: `scripts/testing/test_cs2_env.bat` - Tests the game environment interface
+
+The adaptive orchestration test is particularly valuable for verifying the streamlined architecture, as it confirms that:
+1. The adaptive agent correctly initializes all specialized modes
+2. Dynamic mode switching works based on performance metrics
+3. Knowledge is transferred between different modes
+4. The system handles errors gracefully
+
+For quick testing, use:
+```
+scripts\testing\test_adaptive_orchestration.bat
+```
+
+For more comprehensive testing with the real environment, use:
+```
+scripts\testing\test_adaptive_orchestration.bat --real-env 300
+```
 
 ## Deployment
 
@@ -105,6 +120,13 @@ For deployment, use one of the following scripts:
 These streamlined deployment scripts provide a simplified interface while maintaining full functionality through the adaptive agent's orchestration capabilities.
 
 ## Documentation
+
+For a complete understanding of the architecture, refer to these key documents:
+
+- **Executive Summary**: `analysis_log/architecture/adaptive_architecture_executive_summary.md` - High-level overview of the streamlined architecture
+- **Architecture Details**: `analysis_log/architecture/adaptive_orchestration.md` - Detailed explanation of the adaptive agent orchestration
+- **Visual Diagram**: `analysis_log/visualization/adaptive_orchestration_diagram.md` - Visual representation of the architecture
+- **Testing Documentation**: `analysis_log/testing/adaptive_orchestration_testing.md` - Details of the testing methodology
 
 For detailed documentation, see the following:
 

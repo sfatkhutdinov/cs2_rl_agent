@@ -392,6 +392,7 @@ For a complete overview of all findings and strategic recommendations, see:
 - [Analysis Summary: High-level Overview of All Completed Analyses](analysis_summary.md)
 - [Development Roadmap: Strategic Plan for Future Enhancements](development_roadmap.md)
 - [Streamlined Architecture Verification](architecture/streamlined_architecture_verification.md)
+- [Adaptive Architecture Executive Summary](architecture/adaptive_architecture_executive_summary.md)
 
 ## Directory Structure
 
@@ -405,6 +406,7 @@ For a complete overview of all findings and strategic recommendations, see:
 - [Configuration System](architecture/configuration_system.md) - Configuration system
 - [Adaptive Agent Orchestration](architecture/adaptive_orchestration.md) - How the adaptive agent orchestrates all specialized modes
 - [Streamlined Architecture Verification](architecture/streamlined_architecture_verification.md) - Verification of streamlined architecture implementation
+- [Adaptive Architecture Executive Summary](architecture/adaptive_architecture_executive_summary.md) - Executive summary of streamlined architecture
 
 ### Environment Analysis
 - [Autonomous Environment Implementation](environment/autonomous_environment.md) - Environment with autonomous capabilities
@@ -504,6 +506,7 @@ The following analyses have been completed and can be accessed:
 - [Streamlined Architecture Verification](architecture/streamlined_architecture_verification.md) ✓
 - [Adaptive Orchestration Testing](testing/adaptive_orchestration_testing.md) ✓
 - [Adaptive Orchestration Diagram](visualization/adaptive_orchestration_diagram.md) ✓
+- [Adaptive Architecture Executive Summary](architecture/adaptive_architecture_executive_summary.md) ✓
 
 ## Analyses in Progress
 The following analyses are currently in progress:
